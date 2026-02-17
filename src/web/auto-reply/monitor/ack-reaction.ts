@@ -1,6 +1,6 @@
+import { shouldAckReactionForWhatsApp } from "../../../channels/ack-reactions.js";
 import type { loadConfig } from "../../../config/config.js";
 import { logVerbose } from "../../../globals.js";
-import { shouldAckReactionForWhatsApp } from "../../../channels/ack-reactions.js";
 import { sendReactionWhatsApp } from "../../outbound.js";
 import { formatError } from "../../session.js";
 import type { WebInboundMsg } from "../types.js";
@@ -17,7 +17,9 @@ export function maybeSendAckReaction(params: {
   info: (obj: unknown, msg: string) => void;
   warn: (obj: unknown, msg: string) => void;
 }) {
-  if (!params.msg.id) return;
+  if (!params.msg.id) {
+    return;
+  }
 
   const ackConfig = params.cfg.channels?.whatsapp?.ackReaction;
   const emoji = (ackConfig?.emoji ?? "").trim();
@@ -45,7 +47,9 @@ export function maybeSendAckReaction(params: {
       groupActivated: activation === "always",
     });
 
-  if (!shouldSendReaction()) return;
+  if (!shouldSendReaction()) {
+    return;
+  }
 
   params.info(
     { chatId: params.msg.chatId, messageId: params.msg.id, emoji },

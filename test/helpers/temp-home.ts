@@ -9,6 +9,7 @@ type EnvSnapshot = {
   userProfile: string | undefined;
   homeDrive: string | undefined;
   homePath: string | undefined;
+  openclawHome: string | undefined;
   stateDir: string | undefined;
 };
 
@@ -18,43 +19,59 @@ function snapshotEnv(): EnvSnapshot {
     userProfile: process.env.USERPROFILE,
     homeDrive: process.env.HOMEDRIVE,
     homePath: process.env.HOMEPATH,
+    openclawHome: process.env.OPENCLAW_HOME,
     stateDir: process.env.OPENCLAW_STATE_DIR,
   };
 }
 
 function restoreEnv(snapshot: EnvSnapshot) {
   const restoreKey = (key: string, value: string | undefined) => {
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
   };
   restoreKey("HOME", snapshot.home);
   restoreKey("USERPROFILE", snapshot.userProfile);
   restoreKey("HOMEDRIVE", snapshot.homeDrive);
   restoreKey("HOMEPATH", snapshot.homePath);
+  restoreKey("OPENCLAW_HOME", snapshot.openclawHome);
   restoreKey("OPENCLAW_STATE_DIR", snapshot.stateDir);
 }
 
 function snapshotExtraEnv(keys: string[]): Record<string, string | undefined> {
   const snapshot: Record<string, string | undefined> = {};
-  for (const key of keys) snapshot[key] = process.env[key];
+  for (const key of keys) {
+    snapshot[key] = process.env[key];
+  }
   return snapshot;
 }
 
 function restoreExtraEnv(snapshot: Record<string, string | undefined>) {
   for (const [key, value] of Object.entries(snapshot)) {
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
   }
 }
 
 function setTempHome(base: string) {
   process.env.HOME = base;
   process.env.USERPROFILE = base;
+  // Ensure tests using HOME isolation aren't affected by leaked OPENCLAW_HOME.
+  delete process.env.OPENCLAW_HOME;
   process.env.OPENCLAW_STATE_DIR = path.join(base, ".openclaw");
 
-  if (process.platform !== "win32") return;
+  if (process.platform !== "win32") {
+    return;
+  }
   const match = base.match(/^([A-Za-z]:)(.*)$/);
-  if (!match) return;
+  if (!match) {
+    return;
+  }
   process.env.HOMEDRIVE = match[1];
   process.env.HOMEPATH = match[2] || "\\";
 }
@@ -78,8 +95,11 @@ export async function withTempHome<T>(
   if (opts.env) {
     for (const [key, raw] of Object.entries(opts.env)) {
       const value = typeof raw === "function" ? raw(base) : raw;
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
     }
   }
 
@@ -89,12 +109,19 @@ export async function withTempHome<T>(
     restoreExtraEnv(envSnapshot);
     restoreEnv(snapshot);
     try {
-      await fs.rm(base, {
-        recursive: true,
-        force: true,
-        maxRetries: 10,
-        retryDelay: 50,
-      });
+      if (process.platform === "win32") {
+        await fs.rm(base, {
+          recursive: true,
+          force: true,
+          maxRetries: 10,
+          retryDelay: 50,
+        });
+      } else {
+        await fs.rm(base, {
+          recursive: true,
+          force: true,
+        });
+      }
     } catch {
       // ignore cleanup failures in tests
     }

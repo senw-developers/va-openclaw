@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
-import fs from "node:fs/promises";
-import path from "node:path";
-import { resolveStateDir } from "../config/paths.js";
+import { normalizeDeviceAuthScopes } from "../shared/device-auth.js";
+import {
+  createAsyncLock,
+  pruneExpiredPending,
+  readJsonFile,
+  resolvePairingPaths,
+  writeJsonAtomic,
+} from "./pairing-files.js";
+import { generatePairingToken, verifyPairingToken } from "./pairing-token.js";
 
 export type DevicePairingPendingRequest = {
   requestId: string;
@@ -67,88 +73,27 @@ type DevicePairingStateFile = {
 
 const PENDING_TTL_MS = 5 * 60 * 1000;
 
-function resolvePaths(baseDir?: string) {
-  const root = baseDir ?? resolveStateDir();
-  const dir = path.join(root, "devices");
-  return {
-    dir,
-    pendingPath: path.join(dir, "pending.json"),
-    pairedPath: path.join(dir, "paired.json"),
-  };
-}
-
-async function readJSON<T>(filePath: string): Promise<T | null> {
-  try {
-    const raw = await fs.readFile(filePath, "utf8");
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
-}
-
-async function writeJSONAtomic(filePath: string, value: unknown) {
-  const dir = path.dirname(filePath);
-  await fs.mkdir(dir, { recursive: true });
-  const tmp = `${filePath}.${randomUUID()}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(value, null, 2), "utf8");
-  try {
-    await fs.chmod(tmp, 0o600);
-  } catch {
-    // best-effort
-  }
-  await fs.rename(tmp, filePath);
-  try {
-    await fs.chmod(filePath, 0o600);
-  } catch {
-    // best-effort
-  }
-}
-
-function pruneExpiredPending(
-  pendingById: Record<string, DevicePairingPendingRequest>,
-  nowMs: number,
-) {
-  for (const [id, req] of Object.entries(pendingById)) {
-    if (nowMs - req.ts > PENDING_TTL_MS) {
-      delete pendingById[id];
-    }
-  }
-}
-
-let lock: Promise<void> = Promise.resolve();
-async function withLock<T>(fn: () => Promise<T>): Promise<T> {
-  const prev = lock;
-  let release: (() => void) | undefined;
-  lock = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await prev;
-  try {
-    return await fn();
-  } finally {
-    release?.();
-  }
-}
+const withLock = createAsyncLock();
 
 async function loadState(baseDir?: string): Promise<DevicePairingStateFile> {
-  const { pendingPath, pairedPath } = resolvePaths(baseDir);
+  const { pendingPath, pairedPath } = resolvePairingPaths(baseDir, "devices");
   const [pending, paired] = await Promise.all([
-    readJSON<Record<string, DevicePairingPendingRequest>>(pendingPath),
-    readJSON<Record<string, PairedDevice>>(pairedPath),
+    readJsonFile<Record<string, DevicePairingPendingRequest>>(pendingPath),
+    readJsonFile<Record<string, PairedDevice>>(pairedPath),
   ]);
   const state: DevicePairingStateFile = {
     pendingById: pending ?? {},
     pairedByDeviceId: paired ?? {},
   };
-  pruneExpiredPending(state.pendingById, Date.now());
+  pruneExpiredPending(state.pendingById, Date.now(), PENDING_TTL_MS);
   return state;
 }
 
 async function persistState(state: DevicePairingStateFile, baseDir?: string) {
-  const { pendingPath, pairedPath } = resolvePaths(baseDir);
+  const { pendingPath, pairedPath } = resolvePairingPaths(baseDir, "devices");
   await Promise.all([
-    writeJSONAtomic(pendingPath, state.pendingById),
-    writeJSONAtomic(pairedPath, state.pairedByDeviceId),
+    writeJsonAtomic(pendingPath, state.pendingById),
+    writeJsonAtomic(pairedPath, state.pairedByDeviceId),
   ]);
 }
 
@@ -164,59 +109,96 @@ function normalizeRole(role: string | undefined): string | null {
 function mergeRoles(...items: Array<string | string[] | undefined>): string[] | undefined {
   const roles = new Set<string>();
   for (const item of items) {
-    if (!item) continue;
+    if (!item) {
+      continue;
+    }
     if (Array.isArray(item)) {
       for (const role of item) {
         const trimmed = role.trim();
-        if (trimmed) roles.add(trimmed);
+        if (trimmed) {
+          roles.add(trimmed);
+        }
       }
     } else {
       const trimmed = item.trim();
-      if (trimmed) roles.add(trimmed);
+      if (trimmed) {
+        roles.add(trimmed);
+      }
     }
   }
-  if (roles.size === 0) return undefined;
+  if (roles.size === 0) {
+    return undefined;
+  }
   return [...roles];
 }
 
 function mergeScopes(...items: Array<string[] | undefined>): string[] | undefined {
   const scopes = new Set<string>();
   for (const item of items) {
-    if (!item) continue;
+    if (!item) {
+      continue;
+    }
     for (const scope of item) {
       const trimmed = scope.trim();
-      if (trimmed) scopes.add(trimmed);
+      if (trimmed) {
+        scopes.add(trimmed);
+      }
     }
   }
-  if (scopes.size === 0) return undefined;
+  if (scopes.size === 0) {
+    return undefined;
+  }
   return [...scopes];
 }
 
-function normalizeScopes(scopes: string[] | undefined): string[] {
-  if (!Array.isArray(scopes)) return [];
-  const out = new Set<string>();
-  for (const scope of scopes) {
-    const trimmed = scope.trim();
-    if (trimmed) out.add(trimmed);
-  }
-  return [...out].sort();
-}
-
 function scopesAllow(requested: string[], allowed: string[]): boolean {
-  if (requested.length === 0) return true;
-  if (allowed.length === 0) return false;
+  if (requested.length === 0) {
+    return true;
+  }
+  if (allowed.length === 0) {
+    return false;
+  }
   const allowedSet = new Set(allowed);
   return requested.every((scope) => allowedSet.has(scope));
 }
 
 function newToken() {
-  return randomUUID().replaceAll("-", "");
+  return generatePairingToken();
+}
+
+function getPairedDeviceFromState(
+  state: DevicePairingStateFile,
+  deviceId: string,
+): PairedDevice | null {
+  return state.pairedByDeviceId[normalizeDeviceId(deviceId)] ?? null;
+}
+
+function cloneDeviceTokens(device: PairedDevice): Record<string, DeviceAuthToken> {
+  return device.tokens ? { ...device.tokens } : {};
+}
+
+function buildDeviceAuthToken(params: {
+  role: string;
+  scopes: string[];
+  existing?: DeviceAuthToken;
+  now: number;
+  rotatedAtMs?: number;
+}): DeviceAuthToken {
+  return {
+    token: newToken(),
+    role: params.role,
+    scopes: params.scopes,
+    createdAtMs: params.existing?.createdAtMs ?? params.now,
+    rotatedAtMs: params.rotatedAtMs,
+    revokedAtMs: undefined,
+    lastUsedAtMs: params.existing?.lastUsedAtMs,
+  };
 }
 
 export async function listDevicePairing(baseDir?: string): Promise<DevicePairingList> {
   const state = await loadState(baseDir);
-  const pending = Object.values(state.pendingById).sort((a, b) => b.ts - a.ts);
-  const paired = Object.values(state.pairedByDeviceId).sort(
+  const pending = Object.values(state.pendingById).toSorted((a, b) => b.ts - a.ts);
+  const paired = Object.values(state.pairedByDeviceId).toSorted(
     (a, b) => b.approvedAtMs - a.approvedAtMs,
   );
   return { pending, paired };
@@ -278,7 +260,9 @@ export async function approveDevicePairing(
   return await withLock(async () => {
     const state = await loadState(baseDir);
     const pending = state.pendingById[requestId];
-    if (!pending) return null;
+    if (!pending) {
+      return null;
+    }
     const now = Date.now();
     const existing = state.pairedByDeviceId[pending.deviceId];
     const roles = mergeRoles(existing?.roles, existing?.role, pending.roles, pending.role);
@@ -286,7 +270,7 @@ export async function approveDevicePairing(
     const tokens = existing?.tokens ? { ...existing.tokens } : {};
     const roleForToken = normalizeRole(pending.role);
     if (roleForToken) {
-      const nextScopes = normalizeScopes(pending.scopes);
+      const nextScopes = normalizeDeviceAuthScopes(pending.scopes);
       const existingToken = tokens[roleForToken];
       const now = Date.now();
       tokens[roleForToken] = {
@@ -328,7 +312,9 @@ export async function rejectDevicePairing(
   return await withLock(async () => {
     const state = await loadState(baseDir);
     const pending = state.pendingById[requestId];
-    if (!pending) return null;
+    if (!pending) {
+      return null;
+    }
     delete state.pendingById[requestId];
     await persistState(state, baseDir);
     return { requestId, deviceId: pending.deviceId };
@@ -343,7 +329,9 @@ export async function updatePairedDeviceMetadata(
   return await withLock(async () => {
     const state = await loadState(baseDir);
     const existing = state.pairedByDeviceId[normalizeDeviceId(deviceId)];
-    if (!existing) return;
+    if (!existing) {
+      return;
+    }
     const roles = mergeRoles(existing.roles, existing.role, patch.role);
     const scopes = mergeScopes(existing.scopes, patch.scopes);
     state.pairedByDeviceId[deviceId] = {
@@ -363,7 +351,9 @@ export async function updatePairedDeviceMetadata(
 export function summarizeDeviceTokens(
   tokens: Record<string, DeviceAuthToken> | undefined,
 ): DeviceAuthTokenSummary[] | undefined {
-  if (!tokens) return undefined;
+  if (!tokens) {
+    return undefined;
+  }
   const summaries = Object.values(tokens)
     .map((token) => ({
       role: token.role,
@@ -373,7 +363,7 @@ export function summarizeDeviceTokens(
       revokedAtMs: token.revokedAtMs,
       lastUsedAtMs: token.lastUsedAtMs,
     }))
-    .sort((a, b) => a.role.localeCompare(b.role));
+    .toSorted((a, b) => a.role.localeCompare(b.role));
   return summaries.length > 0 ? summaries : undefined;
 }
 
@@ -386,15 +376,25 @@ export async function verifyDeviceToken(params: {
 }): Promise<{ ok: boolean; reason?: string }> {
   return await withLock(async () => {
     const state = await loadState(params.baseDir);
-    const device = state.pairedByDeviceId[normalizeDeviceId(params.deviceId)];
-    if (!device) return { ok: false, reason: "device-not-paired" };
+    const device = getPairedDeviceFromState(state, params.deviceId);
+    if (!device) {
+      return { ok: false, reason: "device-not-paired" };
+    }
     const role = normalizeRole(params.role);
-    if (!role) return { ok: false, reason: "role-missing" };
+    if (!role) {
+      return { ok: false, reason: "role-missing" };
+    }
     const entry = device.tokens?.[role];
-    if (!entry) return { ok: false, reason: "token-missing" };
-    if (entry.revokedAtMs) return { ok: false, reason: "token-revoked" };
-    if (entry.token !== params.token) return { ok: false, reason: "token-mismatch" };
-    const requestedScopes = normalizeScopes(params.scopes);
+    if (!entry) {
+      return { ok: false, reason: "token-missing" };
+    }
+    if (entry.revokedAtMs) {
+      return { ok: false, reason: "token-revoked" };
+    }
+    if (!verifyPairingToken(params.token, entry.token)) {
+      return { ok: false, reason: "token-mismatch" };
+    }
+    const requestedScopes = normalizeDeviceAuthScopes(params.scopes);
     if (!scopesAllow(requestedScopes, entry.scopes)) {
       return { ok: false, reason: "scope-mismatch" };
     }
@@ -415,34 +415,58 @@ export async function ensureDeviceToken(params: {
 }): Promise<DeviceAuthToken | null> {
   return await withLock(async () => {
     const state = await loadState(params.baseDir);
-    const device = state.pairedByDeviceId[normalizeDeviceId(params.deviceId)];
-    if (!device) return null;
-    const role = normalizeRole(params.role);
-    if (!role) return null;
-    const requestedScopes = normalizeScopes(params.scopes);
-    const tokens = device.tokens ? { ...device.tokens } : {};
-    const existing = tokens[role];
+    const requestedScopes = normalizeDeviceAuthScopes(params.scopes);
+    const context = resolveDeviceTokenUpdateContext({
+      state,
+      deviceId: params.deviceId,
+      role: params.role,
+    });
+    if (!context) {
+      return null;
+    }
+    const { device, role, tokens, existing } = context;
     if (existing && !existing.revokedAtMs) {
       if (scopesAllow(requestedScopes, existing.scopes)) {
         return existing;
       }
     }
     const now = Date.now();
-    const next: DeviceAuthToken = {
-      token: newToken(),
+    const next = buildDeviceAuthToken({
       role,
       scopes: requestedScopes,
-      createdAtMs: existing?.createdAtMs ?? now,
+      existing,
+      now,
       rotatedAtMs: existing ? now : undefined,
-      revokedAtMs: undefined,
-      lastUsedAtMs: existing?.lastUsedAtMs,
-    };
+    });
     tokens[role] = next;
     device.tokens = tokens;
     state.pairedByDeviceId[device.deviceId] = device;
     await persistState(state, params.baseDir);
     return next;
   });
+}
+
+function resolveDeviceTokenUpdateContext(params: {
+  state: DevicePairingStateFile;
+  deviceId: string;
+  role: string;
+}): {
+  device: PairedDevice;
+  role: string;
+  tokens: Record<string, DeviceAuthToken>;
+  existing: DeviceAuthToken | undefined;
+} | null {
+  const device = getPairedDeviceFromState(params.state, params.deviceId);
+  if (!device) {
+    return null;
+  }
+  const role = normalizeRole(params.role);
+  if (!role) {
+    return null;
+  }
+  const tokens = cloneDeviceTokens(device);
+  const existing = tokens[role];
+  return { device, role, tokens, existing };
 }
 
 export async function rotateDeviceToken(params: {
@@ -453,23 +477,26 @@ export async function rotateDeviceToken(params: {
 }): Promise<DeviceAuthToken | null> {
   return await withLock(async () => {
     const state = await loadState(params.baseDir);
-    const device = state.pairedByDeviceId[normalizeDeviceId(params.deviceId)];
-    if (!device) return null;
-    const role = normalizeRole(params.role);
-    if (!role) return null;
-    const tokens = device.tokens ? { ...device.tokens } : {};
-    const existing = tokens[role];
-    const requestedScopes = normalizeScopes(params.scopes ?? existing?.scopes ?? device.scopes);
+    const context = resolveDeviceTokenUpdateContext({
+      state,
+      deviceId: params.deviceId,
+      role: params.role,
+    });
+    if (!context) {
+      return null;
+    }
+    const { device, role, tokens, existing } = context;
+    const requestedScopes = normalizeDeviceAuthScopes(
+      params.scopes ?? existing?.scopes ?? device.scopes,
+    );
     const now = Date.now();
-    const next: DeviceAuthToken = {
-      token: newToken(),
+    const next = buildDeviceAuthToken({
       role,
       scopes: requestedScopes,
-      createdAtMs: existing?.createdAtMs ?? now,
+      existing,
+      now,
       rotatedAtMs: now,
-      revokedAtMs: undefined,
-      lastUsedAtMs: existing?.lastUsedAtMs,
-    };
+    });
     tokens[role] = next;
     device.tokens = tokens;
     if (params.scopes !== undefined) {
@@ -489,10 +516,16 @@ export async function revokeDeviceToken(params: {
   return await withLock(async () => {
     const state = await loadState(params.baseDir);
     const device = state.pairedByDeviceId[normalizeDeviceId(params.deviceId)];
-    if (!device) return null;
+    if (!device) {
+      return null;
+    }
     const role = normalizeRole(params.role);
-    if (!role) return null;
-    if (!device.tokens?.[role]) return null;
+    if (!role) {
+      return null;
+    }
+    if (!device.tokens?.[role]) {
+      return null;
+    }
     const tokens = { ...device.tokens };
     const entry = { ...tokens[role], revokedAtMs: Date.now() };
     tokens[role] = entry;

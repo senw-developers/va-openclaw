@@ -4,16 +4,50 @@ import type { SessionEntry } from "../config/sessions.js";
 import { applySessionsPatchToStore } from "./sessions-patch.js";
 
 describe("gateway sessions patch", () => {
+  test("persists thinkingLevel=off (does not clear)", async () => {
+    const store: Record<string, SessionEntry> = {};
+    const res = await applySessionsPatchToStore({
+      cfg: {} as OpenClawConfig,
+      store,
+      storeKey: "agent:main:main",
+      patch: { key: "agent:main:main", thinkingLevel: "off" },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) {
+      return;
+    }
+    expect(res.entry.thinkingLevel).toBe("off");
+  });
+
+  test("clears thinkingLevel when patch sets null", async () => {
+    const store: Record<string, SessionEntry> = {
+      "agent:main:main": { thinkingLevel: "low" } as SessionEntry,
+    };
+    const res = await applySessionsPatchToStore({
+      cfg: {} as OpenClawConfig,
+      store,
+      storeKey: "agent:main:main",
+      patch: { key: "agent:main:main", thinkingLevel: null },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) {
+      return;
+    }
+    expect(res.entry.thinkingLevel).toBeUndefined();
+  });
+
   test("persists elevatedLevel=off (does not clear)", async () => {
     const store: Record<string, SessionEntry> = {};
     const res = await applySessionsPatchToStore({
       cfg: {} as OpenClawConfig,
       store,
       storeKey: "agent:main:main",
-      patch: { elevatedLevel: "off" },
+      patch: { key: "agent:main:main", elevatedLevel: "off" },
     });
     expect(res.ok).toBe(true);
-    if (!res.ok) return;
+    if (!res.ok) {
+      return;
+    }
     expect(res.entry.elevatedLevel).toBe("off");
   });
 
@@ -23,10 +57,12 @@ describe("gateway sessions patch", () => {
       cfg: {} as OpenClawConfig,
       store,
       storeKey: "agent:main:main",
-      patch: { elevatedLevel: "on" },
+      patch: { key: "agent:main:main", elevatedLevel: "on" },
     });
     expect(res.ok).toBe(true);
-    if (!res.ok) return;
+    if (!res.ok) {
+      return;
+    }
     expect(res.entry.elevatedLevel).toBe("on");
   });
 
@@ -38,10 +74,12 @@ describe("gateway sessions patch", () => {
       cfg: {} as OpenClawConfig,
       store,
       storeKey: "agent:main:main",
-      patch: { elevatedLevel: null },
+      patch: { key: "agent:main:main", elevatedLevel: null },
     });
     expect(res.ok).toBe(true);
-    if (!res.ok) return;
+    if (!res.ok) {
+      return;
+    }
     expect(res.entry.elevatedLevel).toBeUndefined();
   });
 
@@ -51,10 +89,12 @@ describe("gateway sessions patch", () => {
       cfg: {} as OpenClawConfig,
       store,
       storeKey: "agent:main:main",
-      patch: { elevatedLevel: "maybe" },
+      patch: { key: "agent:main:main", elevatedLevel: "maybe" },
     });
     expect(res.ok).toBe(false);
-    if (res.ok) return;
+    if (res.ok) {
+      return;
+    }
     expect(res.error.message).toContain("invalid elevatedLevel");
   });
 
@@ -74,15 +114,47 @@ describe("gateway sessions patch", () => {
       cfg: {} as OpenClawConfig,
       store,
       storeKey: "agent:main:main",
-      patch: { model: "openai/gpt-5.2" },
-      loadGatewayModelCatalog: async () => [{ provider: "openai", id: "gpt-5.2" }],
+      patch: { key: "agent:main:main", model: "openai/gpt-5.2" },
+      loadGatewayModelCatalog: async () => [{ provider: "openai", id: "gpt-5.2", name: "gpt-5.2" }],
     });
     expect(res.ok).toBe(true);
-    if (!res.ok) return;
+    if (!res.ok) {
+      return;
+    }
     expect(res.entry.providerOverride).toBe("openai");
     expect(res.entry.modelOverride).toBe("gpt-5.2");
     expect(res.entry.authProfileOverride).toBeUndefined();
     expect(res.entry.authProfileOverrideSource).toBeUndefined();
     expect(res.entry.authProfileOverrideCompactionCount).toBeUndefined();
+  });
+
+  test("sets spawnDepth for subagent sessions", async () => {
+    const store: Record<string, SessionEntry> = {};
+    const res = await applySessionsPatchToStore({
+      cfg: {} as OpenClawConfig,
+      store,
+      storeKey: "agent:main:subagent:child",
+      patch: { key: "agent:main:subagent:child", spawnDepth: 2 },
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) {
+      return;
+    }
+    expect(res.entry.spawnDepth).toBe(2);
+  });
+
+  test("rejects spawnDepth on non-subagent sessions", async () => {
+    const store: Record<string, SessionEntry> = {};
+    const res = await applySessionsPatchToStore({
+      cfg: {} as OpenClawConfig,
+      store,
+      storeKey: "agent:main:main",
+      patch: { key: "agent:main:main", spawnDepth: 1 },
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) {
+      return;
+    }
+    expect(res.error.message).toContain("spawnDepth is only supported");
   });
 });

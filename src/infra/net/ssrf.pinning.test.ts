@@ -1,13 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
-
-import { createPinnedLookup, resolvePinnedHostname } from "./ssrf.js";
+import {
+  createPinnedLookup,
+  type LookupFn,
+  resolvePinnedHostname,
+  resolvePinnedHostnameWithPolicy,
+} from "./ssrf.js";
 
 describe("ssrf pinning", () => {
   it("pins resolved addresses for the target hostname", async () => {
     const lookup = vi.fn(async () => [
       { address: "93.184.216.34", family: 4 },
       { address: "93.184.216.35", family: 4 },
-    ]);
+    ]) as unknown as LookupFn;
 
     const pinned = await resolvePinnedHostname("Example.com.", lookup);
     expect(pinned.hostname).toBe("example.com");
@@ -15,8 +19,11 @@ describe("ssrf pinning", () => {
 
     const first = await new Promise<{ address: string; family?: number }>((resolve, reject) => {
       pinned.lookup("example.com", (err, address, family) => {
-        if (err) reject(err);
-        else resolve({ address: address as string, family });
+        if (err) {
+          reject(err);
+        } else {
+          resolve({ address: address, family });
+        }
       });
     });
     expect(first.address).toBe("93.184.216.34");
@@ -24,8 +31,11 @@ describe("ssrf pinning", () => {
 
     const all = await new Promise<unknown>((resolve, reject) => {
       pinned.lookup("example.com", { all: true }, (err, addresses) => {
-        if (err) reject(err);
-        else resolve(addresses);
+        if (err) {
+          reject(err);
+        } else {
+          resolve(addresses);
+        }
       });
     });
     expect(Array.isArray(all)).toBe(true);
@@ -35,7 +45,7 @@ describe("ssrf pinning", () => {
   });
 
   it("rejects private DNS results", async () => {
-    const lookup = vi.fn(async () => [{ address: "10.0.0.8", family: 4 }]);
+    const lookup = vi.fn(async () => [{ address: "10.0.0.8", family: 4 }]) as unknown as LookupFn;
     await expect(resolvePinnedHostname("example.com", lookup)).rejects.toThrow(/private|internal/i);
   });
 
@@ -43,7 +53,7 @@ describe("ssrf pinning", () => {
     const fallback = vi.fn((host: string, options?: unknown, callback?: unknown) => {
       const cb = typeof options === "function" ? options : (callback as () => void);
       (cb as (err: null, address: string, family: number) => void)(null, "1.2.3.4", 4);
-    });
+    }) as unknown as Parameters<typeof createPinnedLookup>[0]["fallback"];
     const lookup = createPinnedLookup({
       hostname: "example.com",
       addresses: ["93.184.216.34"],
@@ -52,12 +62,49 @@ describe("ssrf pinning", () => {
 
     const result = await new Promise<{ address: string }>((resolve, reject) => {
       lookup("other.test", (err, address) => {
-        if (err) reject(err);
-        else resolve({ address: address as string });
+        if (err) {
+          reject(err);
+        } else {
+          resolve({ address: address });
+        }
       });
     });
 
     expect(fallback).toHaveBeenCalledTimes(1);
     expect(result.address).toBe("1.2.3.4");
+  });
+
+  it("enforces hostname allowlist when configured", async () => {
+    const lookup = vi.fn(async () => [
+      { address: "93.184.216.34", family: 4 },
+    ]) as unknown as LookupFn;
+
+    await expect(
+      resolvePinnedHostnameWithPolicy("api.example.com", {
+        lookupFn: lookup,
+        policy: { hostnameAllowlist: ["cdn.example.com", "*.trusted.example"] },
+      }),
+    ).rejects.toThrow(/allowlist/i);
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it("supports wildcard hostname allowlist patterns", async () => {
+    const lookup = vi.fn(async () => [
+      { address: "93.184.216.34", family: 4 },
+    ]) as unknown as LookupFn;
+
+    await expect(
+      resolvePinnedHostnameWithPolicy("assets.example.com", {
+        lookupFn: lookup,
+        policy: { hostnameAllowlist: ["*.example.com"] },
+      }),
+    ).resolves.toMatchObject({ hostname: "assets.example.com" });
+
+    await expect(
+      resolvePinnedHostnameWithPolicy("example.com", {
+        lookupFn: lookup,
+        policy: { hostnameAllowlist: ["*.example.com"] },
+      }),
+    ).rejects.toThrow(/allowlist/i);
   });
 });

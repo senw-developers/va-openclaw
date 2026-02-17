@@ -6,7 +6,6 @@ import type {
   JoinEvent,
   LeaveEvent,
   PostbackEvent,
-  EventSource,
 } from "@line/bot-sdk";
 import type { OpenClawConfig } from "../config/config.js";
 import { danger, logVerbose } from "../globals.js";
@@ -17,12 +16,13 @@ import {
   upsertChannelPairingRequest,
 } from "../pairing/pairing-store.js";
 import type { RuntimeEnv } from "../runtime.js";
+import { firstDefined, isSenderAllowed, normalizeAllowFromWithStore } from "./bot-access.js";
 import {
+  getLineSourceInfo,
   buildLineMessageContext,
   buildLinePostbackContext,
   type LineInboundContext,
 } from "./bot-message-context.js";
-import { firstDefined, isSenderAllowed, normalizeAllowFromWithStore } from "./bot-access.js";
 import { downloadLineMedia } from "./download.js";
 import { pushMessageLine, replyMessageLine } from "./send.js";
 import type { LineGroupConfig, ResolvedLineAccount } from "./types.js";
@@ -38,28 +38,6 @@ export interface LineHandlerContext {
   runtime: RuntimeEnv;
   mediaMaxBytes: number;
   processMessage: (ctx: LineInboundContext) => Promise<void>;
-}
-
-type LineSourceInfo = {
-  userId?: string;
-  groupId?: string;
-  roomId?: string;
-  isGroup: boolean;
-};
-
-function getSourceInfo(source: EventSource): LineSourceInfo {
-  const userId =
-    source.type === "user"
-      ? source.userId
-      : source.type === "group"
-        ? source.userId
-        : source.type === "room"
-          ? source.userId
-          : undefined;
-  const groupId = source.type === "group" ? source.groupId : undefined;
-  const roomId = source.type === "room" ? source.roomId : undefined;
-  const isGroup = source.type === "group" || source.type === "room";
-  return { userId, groupId, roomId, isGroup };
 }
 
 function resolveLineGroupConfig(params: {
@@ -87,7 +65,9 @@ async function sendLinePairingReply(params: {
     channel: "line",
     id: senderId,
   });
-  if (!created) return;
+  if (!created) {
+    return;
+  }
   logVerbose(`line pairing request sender=${senderId}`);
   const idLabel = (() => {
     try {
@@ -127,7 +107,7 @@ async function shouldProcessLineEvent(
   context: LineHandlerContext,
 ): Promise<boolean> {
   const { cfg, account } = context;
-  const { userId, groupId, roomId, isGroup } = getSourceInfo(event.source);
+  const { userId, groupId, roomId, isGroup } = getLineSourceInfo(event.source);
   const senderId = userId ?? "";
 
   const storeAllowFrom = await readChannelAllowFromStore("line").catch(() => []);
@@ -219,7 +199,9 @@ async function handleMessageEvent(event: MessageEvent, context: LineHandlerConte
   const { cfg, account, runtime, mediaMaxBytes, processMessage } = context;
   const message = event.message;
 
-  if (!(await shouldProcessLineEvent(event, context))) return;
+  if (!(await shouldProcessLineEvent(event, context))) {
+    return;
+  }
 
   // Download media if applicable
   const allMedia: MediaRef[] = [];
@@ -290,14 +272,18 @@ async function handlePostbackEvent(
   const data = event.postback.data;
   logVerbose(`line: received postback: ${data}`);
 
-  if (!(await shouldProcessLineEvent(event, context))) return;
+  if (!(await shouldProcessLineEvent(event, context))) {
+    return;
+  }
 
   const postbackContext = await buildLinePostbackContext({
     event,
     cfg: context.cfg,
     account: context.account,
   });
-  if (!postbackContext) return;
+  if (!postbackContext) {
+    return;
+  }
 
   await context.processMessage(postbackContext);
 }

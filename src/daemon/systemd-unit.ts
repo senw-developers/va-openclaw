@@ -1,14 +1,22 @@
+import { splitArgsPreservingQuotes } from "./arg-split.js";
+
 function systemdEscapeArg(value: string): string {
-  if (!/[\\s"\\\\]/.test(value)) return value;
+  if (!/[\\s"\\\\]/.test(value)) {
+    return value;
+  }
   return `"${value.replace(/\\\\/g, "\\\\\\\\").replace(/"/g, '\\\\"')}"`;
 }
 
 function renderEnvLines(env: Record<string, string | undefined> | undefined): string[] {
-  if (!env) return [];
+  if (!env) {
+    return [];
+  }
   const entries = Object.entries(env).filter(
     ([, value]) => typeof value === "string" && value.trim(),
   );
-  if (entries.length === 0) return [];
+  if (entries.length === 0) {
+    return [];
+  }
   return entries.map(
     ([key, value]) => `Environment=${systemdEscapeArg(`${key}=${value?.trim() ?? ""}`)}`,
   );
@@ -57,44 +65,19 @@ export function buildSystemdUnit({
 }
 
 export function parseSystemdExecStart(value: string): string[] {
-  const args: string[] = [];
-  let current = "";
-  let inQuotes = false;
-  let escapeNext = false;
-
-  for (const char of value) {
-    if (escapeNext) {
-      current += char;
-      escapeNext = false;
-      continue;
-    }
-    if (char === "\\\\") {
-      escapeNext = true;
-      continue;
-    }
-    if (char === '"') {
-      inQuotes = !inQuotes;
-      continue;
-    }
-    if (!inQuotes && /\s/.test(char)) {
-      if (current) {
-        args.push(current);
-        current = "";
-      }
-      continue;
-    }
-    current += char;
-  }
-  if (current) args.push(current);
-  return args;
+  return splitArgsPreservingQuotes(value, { escapeMode: "backslash" });
 }
 
 export function parseSystemdEnvAssignment(raw: string): { key: string; value: string } | null {
   const trimmed = raw.trim();
-  if (!trimmed) return null;
+  if (!trimmed) {
+    return null;
+  }
 
   const unquoted = (() => {
-    if (!(trimmed.startsWith('"') && trimmed.endsWith('"'))) return trimmed;
+    if (!(trimmed.startsWith('"') && trimmed.endsWith('"'))) {
+      return trimmed;
+    }
     let out = "";
     let escapeNext = false;
     for (const ch of trimmed.slice(1, -1)) {
@@ -113,9 +96,13 @@ export function parseSystemdEnvAssignment(raw: string): { key: string; value: st
   })();
 
   const eq = unquoted.indexOf("=");
-  if (eq <= 0) return null;
+  if (eq <= 0) {
+    return null;
+  }
   const key = unquoted.slice(0, eq).trim();
-  if (!key) return null;
+  if (!key) {
+    return null;
+  }
   const value = unquoted.slice(eq + 1);
   return { key, value };
 }

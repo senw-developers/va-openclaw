@@ -1,3 +1,4 @@
+import { buildChannelUiCatalog } from "../../channels/plugins/catalog.js";
 import { resolveChannelDefaultAccountId } from "../../channels/plugins/helpers.js";
 import {
   type ChannelId,
@@ -5,7 +6,6 @@ import {
   listChannelPlugins,
   normalizeChannelId,
 } from "../../channels/plugins/index.js";
-import { buildChannelUiCatalog } from "../../channels/plugins/catalog.js";
 import { buildChannelAccountSnapshot } from "../../channels/plugins/status.js";
 import type { ChannelAccountSnapshot, ChannelPlugin } from "../../channels/plugins/types.js";
 import type { OpenClawConfig } from "../../config/config.js";
@@ -98,7 +98,9 @@ export const channelsHandlers: GatewayRequestHandlers = {
       const defaultRuntime = runtime.channels[channelId];
       const raw =
         accounts?.[accountId] ?? (accountId === defaultAccountId ? defaultRuntime : undefined);
-      if (!raw) return undefined;
+      if (!raw) {
+        return undefined;
+      }
       return raw;
     };
 
@@ -171,7 +173,9 @@ export const channelsHandlers: GatewayRequestHandlers = {
           probe: probeResult,
           audit: auditResult,
         });
-        if (lastProbeAt) snapshot.lastProbeAt = lastProbeAt;
+        if (lastProbeAt) {
+          snapshot.lastProbeAt = lastProbeAt;
+        }
         const activity = getChannelActivity({
           channel: channelId as never,
           accountId,

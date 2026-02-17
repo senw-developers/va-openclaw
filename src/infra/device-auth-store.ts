@@ -1,20 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-
 import { resolveStateDir } from "../config/paths.js";
-
-export type DeviceAuthEntry = {
-  token: string;
-  role: string;
-  scopes: string[];
-  updatedAtMs: number;
-};
-
-type DeviceAuthStore = {
-  version: 1;
-  deviceId: string;
-  tokens: Record<string, DeviceAuthEntry>;
-};
+import {
+  type DeviceAuthEntry,
+  type DeviceAuthStore,
+  normalizeDeviceAuthRole,
+  normalizeDeviceAuthScopes,
+} from "../shared/device-auth.js";
 
 const DEVICE_AUTH_FILE = "device-auth.json";
 
@@ -22,27 +14,19 @@ function resolveDeviceAuthPath(env: NodeJS.ProcessEnv = process.env): string {
   return path.join(resolveStateDir(env), "identity", DEVICE_AUTH_FILE);
 }
 
-function normalizeRole(role: string): string {
-  return role.trim();
-}
-
-function normalizeScopes(scopes: string[] | undefined): string[] {
-  if (!Array.isArray(scopes)) return [];
-  const out = new Set<string>();
-  for (const scope of scopes) {
-    const trimmed = scope.trim();
-    if (trimmed) out.add(trimmed);
-  }
-  return [...out].sort();
-}
-
 function readStore(filePath: string): DeviceAuthStore | null {
   try {
-    if (!fs.existsSync(filePath)) return null;
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
     const raw = fs.readFileSync(filePath, "utf8");
     const parsed = JSON.parse(raw) as DeviceAuthStore;
-    if (parsed?.version !== 1 || typeof parsed.deviceId !== "string") return null;
-    if (!parsed.tokens || typeof parsed.tokens !== "object") return null;
+    if (parsed?.version !== 1 || typeof parsed.deviceId !== "string") {
+      return null;
+    }
+    if (!parsed.tokens || typeof parsed.tokens !== "object") {
+      return null;
+    }
     return parsed;
   } catch {
     return null;
@@ -66,11 +50,17 @@ export function loadDeviceAuthToken(params: {
 }): DeviceAuthEntry | null {
   const filePath = resolveDeviceAuthPath(params.env);
   const store = readStore(filePath);
-  if (!store) return null;
-  if (store.deviceId !== params.deviceId) return null;
-  const role = normalizeRole(params.role);
+  if (!store) {
+    return null;
+  }
+  if (store.deviceId !== params.deviceId) {
+    return null;
+  }
+  const role = normalizeDeviceAuthRole(params.role);
   const entry = store.tokens[role];
-  if (!entry || typeof entry.token !== "string") return null;
+  if (!entry || typeof entry.token !== "string") {
+    return null;
+  }
   return entry;
 }
 
@@ -83,7 +73,7 @@ export function storeDeviceAuthToken(params: {
 }): DeviceAuthEntry {
   const filePath = resolveDeviceAuthPath(params.env);
   const existing = readStore(filePath);
-  const role = normalizeRole(params.role);
+  const role = normalizeDeviceAuthRole(params.role);
   const next: DeviceAuthStore = {
     version: 1,
     deviceId: params.deviceId,
@@ -95,7 +85,7 @@ export function storeDeviceAuthToken(params: {
   const entry: DeviceAuthEntry = {
     token: params.token,
     role,
-    scopes: normalizeScopes(params.scopes),
+    scopes: normalizeDeviceAuthScopes(params.scopes),
     updatedAtMs: Date.now(),
   };
   next.tokens[role] = entry;
@@ -110,9 +100,13 @@ export function clearDeviceAuthToken(params: {
 }): void {
   const filePath = resolveDeviceAuthPath(params.env);
   const store = readStore(filePath);
-  if (!store || store.deviceId !== params.deviceId) return;
-  const role = normalizeRole(params.role);
-  if (!store.tokens[role]) return;
+  if (!store || store.deviceId !== params.deviceId) {
+    return;
+  }
+  const role = normalizeDeviceAuthRole(params.role);
+  if (!store.tokens[role]) {
+    return;
+  }
   const next: DeviceAuthStore = {
     version: 1,
     deviceId: store.deviceId,

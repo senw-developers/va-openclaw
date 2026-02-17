@@ -1,12 +1,12 @@
 import { hasControlCommand } from "../../../auto-reply/command-detection.js";
 import { parseActivationCommand } from "../../../auto-reply/group-activation.js";
+import { recordPendingHistoryEntryIfEnabled } from "../../../auto-reply/reply/history.js";
+import { resolveMentionGating } from "../../../channels/mention-gating.js";
 import type { loadConfig } from "../../../config/config.js";
 import { normalizeE164 } from "../../../utils.js";
-import { resolveMentionGating } from "../../../channels/mention-gating.js";
 import type { MentionConfig } from "../mentions.js";
 import { buildMentionConfig, debugMention, resolveOwnerList } from "../mentions.js";
 import type { WebInboundMsg } from "../types.js";
-import { recordPendingHistoryEntryIfEnabled } from "../../../auto-reply/reply/history.js";
 import { stripMentionsForCommand } from "./commands.js";
 import { resolveGroupActivationFor, resolveGroupPolicyFor } from "./group-activation.js";
 import { noteGroupMember } from "./group-members.js";
@@ -21,9 +21,35 @@ export type GroupHistoryEntry = {
 
 function isOwnerSender(baseMentionConfig: MentionConfig, msg: WebInboundMsg) {
   const sender = normalizeE164(msg.senderE164 ?? "");
-  if (!sender) return false;
+  if (!sender) {
+    return false;
+  }
   const owners = resolveOwnerList(baseMentionConfig, msg.selfE164 ?? undefined);
   return owners.includes(sender);
+}
+
+function recordPendingGroupHistoryEntry(params: {
+  msg: WebInboundMsg;
+  groupHistories: Map<string, GroupHistoryEntry[]>;
+  groupHistoryKey: string;
+  groupHistoryLimit: number;
+}) {
+  const sender =
+    params.msg.senderName && params.msg.senderE164
+      ? `${params.msg.senderName} (${params.msg.senderE164})`
+      : (params.msg.senderName ?? params.msg.senderE164 ?? "Unknown");
+  recordPendingHistoryEntryIfEnabled({
+    historyMap: params.groupHistories,
+    historyKey: params.groupHistoryKey,
+    limit: params.groupHistoryLimit,
+    entry: {
+      sender,
+      body: params.msg.body,
+      timestamp: params.msg.timestamp,
+      id: params.msg.id,
+      senderJid: params.msg.senderJid,
+    },
+  });
 }
 
 export function applyGroupGating(params: {
@@ -66,21 +92,11 @@ export function applyGroupGating(params: {
 
   if (activationCommand.hasCommand && !owner) {
     params.logVerbose(`Ignoring /activation from non-owner in group ${params.conversationId}`);
-    const sender =
-      params.msg.senderName && params.msg.senderE164
-        ? `${params.msg.senderName} (${params.msg.senderE164})`
-        : (params.msg.senderName ?? params.msg.senderE164 ?? "Unknown");
-    recordPendingHistoryEntryIfEnabled({
-      historyMap: params.groupHistories,
-      historyKey: params.groupHistoryKey,
-      limit: params.groupHistoryLimit,
-      entry: {
-        sender,
-        body: params.msg.body,
-        timestamp: params.msg.timestamp,
-        id: params.msg.id,
-        senderJid: params.msg.senderJid,
-      },
+    recordPendingGroupHistoryEntry({
+      msg: params.msg,
+      groupHistories: params.groupHistories,
+      groupHistoryKey: params.groupHistoryKey,
+      groupHistoryLimit: params.groupHistoryLimit,
     });
     return { shouldProcess: false };
   }
@@ -124,21 +140,11 @@ export function applyGroupGating(params: {
     params.logVerbose(
       `Group message stored for context (no mention detected) in ${params.conversationId}: ${params.msg.body}`,
     );
-    const sender =
-      params.msg.senderName && params.msg.senderE164
-        ? `${params.msg.senderName} (${params.msg.senderE164})`
-        : (params.msg.senderName ?? params.msg.senderE164 ?? "Unknown");
-    recordPendingHistoryEntryIfEnabled({
-      historyMap: params.groupHistories,
-      historyKey: params.groupHistoryKey,
-      limit: params.groupHistoryLimit,
-      entry: {
-        sender,
-        body: params.msg.body,
-        timestamp: params.msg.timestamp,
-        id: params.msg.id,
-        senderJid: params.msg.senderJid,
-      },
+    recordPendingGroupHistoryEntry({
+      msg: params.msg,
+      groupHistories: params.groupHistories,
+      groupHistoryKey: params.groupHistoryKey,
+      groupHistoryLimit: params.groupHistoryLimit,
     });
     return { shouldProcess: false };
   }

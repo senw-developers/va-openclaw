@@ -10,7 +10,9 @@ export type ChatAbortControllerEntry = {
 
 export function isChatStopCommandText(text: string): boolean {
   const trimmed = text.trim();
-  if (!trimmed) return false;
+  if (!trimmed) {
+    return false;
+  }
   return trimmed.toLowerCase() === "/stop" || isAbortTrigger(trimmed);
 }
 
@@ -50,15 +52,23 @@ function broadcastChatAborted(
     runId: string;
     sessionKey: string;
     stopReason?: string;
+    partialText?: string;
   },
 ) {
-  const { runId, sessionKey, stopReason } = params;
+  const { runId, sessionKey, stopReason, partialText } = params;
   const payload = {
     runId,
     sessionKey,
     seq: (ops.agentRunSeq.get(runId) ?? 0) + 1,
     state: "aborted" as const,
     stopReason,
+    message: partialText
+      ? {
+          role: "assistant",
+          content: [{ type: "text", text: partialText }],
+          timestamp: Date.now(),
+        }
+      : undefined,
   };
   ops.broadcast("chat", payload);
   ops.nodeSendToSession(sessionKey, "chat", payload);
@@ -74,16 +84,26 @@ export function abortChatRunById(
 ): { aborted: boolean } {
   const { runId, sessionKey, stopReason } = params;
   const active = ops.chatAbortControllers.get(runId);
-  if (!active) return { aborted: false };
-  if (active.sessionKey !== sessionKey) return { aborted: false };
+  if (!active) {
+    return { aborted: false };
+  }
+  if (active.sessionKey !== sessionKey) {
+    return { aborted: false };
+  }
 
+  const bufferedText = ops.chatRunBuffers.get(runId);
+  const partialText = bufferedText && bufferedText.trim() ? bufferedText : undefined;
   ops.chatAbortedRuns.set(runId, Date.now());
   active.controller.abort();
   ops.chatAbortControllers.delete(runId);
   ops.chatRunBuffers.delete(runId);
   ops.chatDeltaSentAt.delete(runId);
-  ops.removeChatRun(runId, runId, sessionKey);
-  broadcastChatAborted(ops, { runId, sessionKey, stopReason });
+  const removed = ops.removeChatRun(runId, runId, sessionKey);
+  broadcastChatAborted(ops, { runId, sessionKey, stopReason, partialText });
+  ops.agentRunSeq.delete(runId);
+  if (removed?.clientRunId) {
+    ops.agentRunSeq.delete(removed.clientRunId);
+  }
   return { aborted: true };
 }
 
@@ -97,9 +117,13 @@ export function abortChatRunsForSessionKey(
   const { sessionKey, stopReason } = params;
   const runIds: string[] = [];
   for (const [runId, active] of ops.chatAbortControllers) {
-    if (active.sessionKey !== sessionKey) continue;
+    if (active.sessionKey !== sessionKey) {
+      continue;
+    }
     const res = abortChatRunById(ops, { runId, sessionKey, stopReason });
-    if (res.aborted) runIds.push(runId);
+    if (res.aborted) {
+      runIds.push(runId);
+    }
   }
   return { aborted: runIds.length > 0, runIds };
 }

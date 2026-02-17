@@ -57,7 +57,7 @@ metadata:
     expect(typeof result.metadata).toBe("string");
 
     // Verify the metadata is valid JSON
-    const parsed = JSON.parse(result.metadata as string);
+    const parsed = JSON.parse(result.metadata);
     expect(parsed.openclaw.emoji).toBe("💾");
     expect(parsed.openclaw.events).toEqual(["command:new"]);
   });
@@ -82,7 +82,7 @@ metadata:
     expect(result.name).toBe("command-logger");
     expect(result.metadata).toBeDefined();
 
-    const parsed = JSON.parse(result.metadata as string);
+    const parsed = JSON.parse(result.metadata);
     expect(parsed.openclaw.emoji).toBe("📝");
     expect(parsed.openclaw.events).toEqual(["command"]);
     expect(parsed.openclaw.requires.config).toEqual(["workspace.dir"]);
@@ -233,7 +233,7 @@ describe("resolveOpenClawMetadata", () => {
     const content = `---
 name: session-memory
 description: "Save session context to memory when /new command is issued"
-homepage: https://docs.openclaw.ai/hooks#session-memory
+homepage: https://docs.openclaw.ai/automation/hooks#session-memory
 metadata:
   {
     "openclaw":

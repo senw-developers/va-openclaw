@@ -3,7 +3,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-
 import type { OpenClawConfig } from "../config/config.js";
 import { note } from "../terminal/note.js";
 import { shortenHomePath } from "../utils.js";
@@ -15,11 +14,15 @@ function resolveHomeDir(): string {
 }
 
 export async function noteMacLaunchAgentOverrides() {
-  if (process.platform !== "darwin") return;
+  if (process.platform !== "darwin") {
+    return;
+  }
   const home = resolveHomeDir();
   const markerCandidates = [path.join(home, ".openclaw", "disable-launchagent")];
   const markerPath = markerCandidates.find((candidate) => fs.existsSync(candidate));
-  if (!markerPath) return;
+  if (!markerPath) {
+    return;
+  }
 
   const displayMarkerPath = shortenHomePath(markerPath);
   const lines = [
@@ -61,13 +64,15 @@ export async function noteMacLaunchctlGatewayEnvOverrides(
   },
 ) {
   const platform = deps?.platform ?? process.platform;
-  if (platform !== "darwin") return;
-  if (!hasConfigGatewayCreds(cfg)) return;
+  if (platform !== "darwin") {
+    return;
+  }
+  if (!hasConfigGatewayCreds(cfg)) {
+    return;
+  }
 
   const getenv = deps?.getenv ?? launchctlGetenv;
   const deprecatedLaunchctlEntries = [
-    ["MOLTBOT_GATEWAY_TOKEN", await getenv("MOLTBOT_GATEWAY_TOKEN")],
-    ["MOLTBOT_GATEWAY_PASSWORD", await getenv("MOLTBOT_GATEWAY_PASSWORD")],
     ["CLAWDBOT_GATEWAY_TOKEN", await getenv("CLAWDBOT_GATEWAY_TOKEN")],
     ["CLAWDBOT_GATEWAY_PASSWORD", await getenv("CLAWDBOT_GATEWAY_PASSWORD")],
   ].filter((entry): entry is [string, string] => Boolean(entry[1]?.trim()));
@@ -94,7 +99,9 @@ export async function noteMacLaunchctlGatewayEnvOverrides(
   const envPassword = passwordEntry?.[1]?.trim() ?? "";
   const envTokenKey = tokenEntry?.[0];
   const envPasswordKey = passwordEntry?.[0];
-  if (!envToken && !envPassword) return;
+  if (!envToken && !envPassword) {
+    return;
+  }
 
   const lines = [
     "- launchctl environment overrides detected (can cause confusing unauthorized errors).",
@@ -117,12 +124,11 @@ export function noteDeprecatedLegacyEnvVars(
   deps?: { noteFn?: typeof note },
 ) {
   const entries = Object.entries(env)
-    .filter(
-      ([key, value]) =>
-        (key.startsWith("MOLTBOT_") || key.startsWith("CLAWDBOT_")) && value?.trim(),
-    )
+    .filter(([key, value]) => key.startsWith("CLAWDBOT_") && value?.trim())
     .map(([key]) => key);
-  if (entries.length === 0) return;
+  if (entries.length === 0) {
+    return;
+  }
 
   const lines = [
     "- Deprecated legacy environment variables detected (ignored).",

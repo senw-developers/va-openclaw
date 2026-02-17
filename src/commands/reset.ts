@@ -1,22 +1,11 @@
 import { cancel, confirm, isCancel, select } from "@clack/prompts";
-
-import {
-  isNixMode,
-  loadConfig,
-  resolveConfigPath,
-  resolveOAuthDir,
-  resolveStateDir,
-} from "../config/config.js";
+import { formatCliCommand } from "../cli/command-format.js";
+import { isNixMode } from "../config/config.js";
 import { resolveGatewayService } from "../daemon/service.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { stylePromptHint, stylePromptMessage, stylePromptTitle } from "../terminal/prompt-style.js";
-import { formatCliCommand } from "../cli/command-format.js";
-import {
-  collectWorkspaceDirs,
-  isPathWithin,
-  listAgentSessionDirs,
-  removePath,
-} from "./cleanup-utils.js";
+import { resolveCleanupPlanFromDisk } from "./cleanup-plan.js";
+import { listAgentSessionDirs, removePath } from "./cleanup-utils.js";
 
 export type ResetScope = "config" | "config+creds+sessions" | "full";
 
@@ -37,7 +26,9 @@ const selectStyled = <T>(params: Parameters<typeof select<T>>[0]) =>
   });
 
 async function stopGatewayIfRunning(runtime: RuntimeEnv) {
-  if (isNixMode) return;
+  if (isNixMode) {
+    return;
+  }
   const service = resolveGatewayService();
   let loaded = false;
   try {
@@ -46,7 +37,9 @@ async function stopGatewayIfRunning(runtime: RuntimeEnv) {
     runtime.error(`Gateway service check failed: ${String(err)}`);
     return;
   }
-  if (!loaded) return;
+  if (!loaded) {
+    return;
+  }
   try {
     await service.stop({ env: process.env, stdout: process.stdout });
   } catch (err) {
@@ -116,13 +109,8 @@ export async function resetCommand(runtime: RuntimeEnv, opts: ResetOptions) {
   }
 
   const dryRun = Boolean(opts.dryRun);
-  const cfg = loadConfig();
-  const stateDir = resolveStateDir();
-  const configPath = resolveConfigPath();
-  const oauthDir = resolveOAuthDir();
-  const configInsideState = isPathWithin(configPath, stateDir);
-  const oauthInsideState = isPathWithin(oauthDir, stateDir);
-  const workspaceDirs = collectWorkspaceDirs(cfg);
+  const { stateDir, configPath, oauthDir, configInsideState, oauthInsideState, workspaceDirs } =
+    resolveCleanupPlanFromDisk();
 
   if (scope !== "config") {
     if (dryRun) {

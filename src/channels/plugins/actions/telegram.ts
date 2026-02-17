@@ -1,12 +1,16 @@
 import {
-  createActionGate,
   readNumberParam,
   readStringArrayParam,
   readStringOrNumberParam,
   readStringParam,
 } from "../../../agents/tools/common.js";
 import { handleTelegramAction } from "../../../agents/tools/telegram-actions.js";
-import { listEnabledTelegramAccounts } from "../../../telegram/accounts.js";
+import type { TelegramActionConfig } from "../../../config/types.telegram.js";
+import { extractToolSend } from "../../../plugin-sdk/tool-send.js";
+import {
+  createTelegramActionGate,
+  listEnabledTelegramAccounts,
+} from "../../../telegram/accounts.js";
 import { isTelegramInlineButtonsEnabled } from "../../../telegram/inline-buttons.js";
 import type { ChannelMessageActionAdapter, ChannelMessageActionName } from "../types.js";
 
@@ -42,12 +46,25 @@ export const telegramMessageActions: ChannelMessageActionAdapter = {
     const accounts = listEnabledTelegramAccounts(cfg).filter(
       (account) => account.tokenSource !== "none",
     );
-    if (accounts.length === 0) return [];
-    const gate = createActionGate(cfg.channels?.telegram?.actions);
+    if (accounts.length === 0) {
+      return [];
+    }
+    // Union of all accounts' action gates (any account enabling an action makes it available)
+    const gates = accounts.map((account) =>
+      createTelegramActionGate({ cfg, accountId: account.accountId }),
+    );
+    const gate = (key: keyof TelegramActionConfig, defaultValue = true) =>
+      gates.some((g) => g(key, defaultValue));
     const actions = new Set<ChannelMessageActionName>(["send"]);
-    if (gate("reactions")) actions.add("react");
-    if (gate("deleteMessage")) actions.add("delete");
-    if (gate("editMessage")) actions.add("edit");
+    if (gate("reactions")) {
+      actions.add("react");
+    }
+    if (gate("deleteMessage")) {
+      actions.add("delete");
+    }
+    if (gate("editMessage")) {
+      actions.add("edit");
+    }
     if (gate("sticker", false)) {
       actions.add("sticker");
       actions.add("sticker-search");
@@ -58,18 +75,15 @@ export const telegramMessageActions: ChannelMessageActionAdapter = {
     const accounts = listEnabledTelegramAccounts(cfg).filter(
       (account) => account.tokenSource !== "none",
     );
-    if (accounts.length === 0) return false;
+    if (accounts.length === 0) {
+      return false;
+    }
     return accounts.some((account) =>
       isTelegramInlineButtonsEnabled({ cfg, accountId: account.accountId }),
     );
   },
   extractToolSend: ({ args }) => {
-    const action = typeof args.action === "string" ? args.action.trim() : "";
-    if (action !== "sendMessage") return null;
-    const to = typeof args.to === "string" ? args.to : undefined;
-    if (!to) return null;
-    const accountId = typeof args.accountId === "string" ? args.accountId.trim() : undefined;
-    return { to, accountId };
+    return extractToolSend(args, "sendMessage");
   },
   handleAction: async ({ action, params, cfg, accountId }) => {
     if (action === "send") {

@@ -14,6 +14,9 @@ import {
 } from "../utils/queue-helpers.js";
 
 export type AnnounceQueueItem = {
+  // Stable announce identity shared by direct + queued delivery paths.
+  // Optional for backward compatibility with previously queued items.
+  announceId?: string;
   prompt: string;
   summaryLine?: string;
   enqueuedAt: number;
@@ -43,6 +46,34 @@ type AnnounceQueueState = {
 };
 
 const ANNOUNCE_QUEUES = new Map<string, AnnounceQueueState>();
+
+function previewQueueSummaryPrompt(queue: AnnounceQueueState): string | undefined {
+  return buildQueueSummaryPrompt({
+    state: {
+      dropPolicy: queue.dropPolicy,
+      droppedCount: queue.droppedCount,
+      summaryLines: [...queue.summaryLines],
+    },
+    noun: "announce",
+  });
+}
+
+function clearQueueSummaryState(queue: AnnounceQueueState) {
+  queue.droppedCount = 0;
+  queue.summaryLines = [];
+}
+
+export function resetAnnounceQueuesForTests() {
+  // Test isolation: other suites may leave a draining queue behind in the worker.
+  // Clearing the map alone isn't enough because drain loops capture `queue` by reference.
+  for (const queue of ANNOUNCE_QUEUES.values()) {
+    queue.items.length = 0;
+    queue.summaryLines.length = 0;
+    queue.droppedCount = 0;
+    queue.lastEnqueuedAt = 0;
+  }
+  ANNOUNCE_QUEUES.clear();
+}
 
 function getAnnounceQueue(
   key: string,
@@ -82,7 +113,9 @@ function getAnnounceQueue(
 
 function scheduleAnnounceDrain(key: string) {
   const queue = ANNOUNCE_QUEUES.get(key);
-  if (!queue || queue.draining) return;
+  if (!queue || queue.draining) {
+    return;
+  }
   queue.draining = true;
   void (async () => {
     try {
@@ -91,25 +124,35 @@ function scheduleAnnounceDrain(key: string) {
         await waitForQueueDebounce(queue);
         if (queue.mode === "collect") {
           if (forceIndividualCollect) {
-            const next = queue.items.shift();
-            if (!next) break;
+            const next = queue.items[0];
+            if (!next) {
+              break;
+            }
             await queue.send(next);
+            queue.items.shift();
             continue;
           }
           const isCrossChannel = hasCrossChannelItems(queue.items, (item) => {
-            if (!item.origin) return {};
-            if (!item.originKey) return { cross: true };
+            if (!item.origin) {
+              return {};
+            }
+            if (!item.originKey) {
+              return { cross: true };
+            }
             return { key: item.originKey };
           });
           if (isCrossChannel) {
             forceIndividualCollect = true;
-            const next = queue.items.shift();
-            if (!next) break;
+            const next = queue.items[0];
+            if (!next) {
+              break;
+            }
             await queue.send(next);
+            queue.items.shift();
             continue;
           }
-          const items = queue.items.splice(0, queue.items.length);
-          const summary = buildQueueSummaryPrompt({ state: queue, noun: "announce" });
+          const items = queue.items.slice();
+          const summary = previewQueueSummaryPrompt(queue);
           const prompt = buildCollectPrompt({
             title: "[Queued announce messages while agent was busy]",
             items,
@@ -117,24 +160,39 @@ function scheduleAnnounceDrain(key: string) {
             renderItem: (item, idx) => `---\nQueued #${idx + 1}\n${item.prompt}`.trim(),
           });
           const last = items.at(-1);
-          if (!last) break;
+          if (!last) {
+            break;
+          }
           await queue.send({ ...last, prompt });
+          queue.items.splice(0, items.length);
+          if (summary) {
+            clearQueueSummaryState(queue);
+          }
           continue;
         }
 
-        const summaryPrompt = buildQueueSummaryPrompt({ state: queue, noun: "announce" });
+        const summaryPrompt = previewQueueSummaryPrompt(queue);
         if (summaryPrompt) {
-          const next = queue.items.shift();
-          if (!next) break;
+          const next = queue.items[0];
+          if (!next) {
+            break;
+          }
           await queue.send({ ...next, prompt: summaryPrompt });
+          queue.items.shift();
+          clearQueueSummaryState(queue);
           continue;
         }
 
-        const next = queue.items.shift();
-        if (!next) break;
+        const next = queue.items[0];
+        if (!next) {
+          break;
+        }
         await queue.send(next);
+        queue.items.shift();
       }
     } catch (err) {
+      // Keep items in queue and retry after debounce; avoid hot-loop retries.
+      queue.lastEnqueuedAt = Date.now();
       defaultRuntime.error?.(`announce queue drain failed for ${key}: ${String(err)}`);
     } finally {
       queue.draining = false;

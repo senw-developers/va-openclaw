@@ -1,6 +1,5 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-
 import { resolveDefaultAgentWorkspaceDir } from "../agents/workspace.js";
 import type { OpenClawConfig } from "../config/config.js";
 import type { RuntimeEnv } from "../runtime.js";
@@ -30,18 +29,41 @@ export function collectWorkspaceDirs(cfg: OpenClawConfig | undefined): string[] 
   return [...dirs];
 }
 
+export function buildCleanupPlan(params: {
+  cfg: OpenClawConfig | undefined;
+  stateDir: string;
+  configPath: string;
+  oauthDir: string;
+}): {
+  configInsideState: boolean;
+  oauthInsideState: boolean;
+  workspaceDirs: string[];
+} {
+  return {
+    configInsideState: isPathWithin(params.configPath, params.stateDir),
+    oauthInsideState: isPathWithin(params.oauthDir, params.stateDir),
+    workspaceDirs: collectWorkspaceDirs(params.cfg),
+  };
+}
+
 export function isPathWithin(child: string, parent: string): boolean {
   const relative = path.relative(parent, child);
   return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function isUnsafeRemovalTarget(target: string): boolean {
-  if (!target.trim()) return true;
+  if (!target.trim()) {
+    return true;
+  }
   const resolved = path.resolve(target);
   const root = path.parse(resolved).root;
-  if (resolved === root) return true;
+  if (resolved === root) {
+    return true;
+  }
   const home = resolveHomeDir();
-  if (home && resolved === path.resolve(home)) return true;
+  if (home && resolved === path.resolve(home)) {
+    return true;
+  }
   return false;
 }
 
@@ -50,7 +72,9 @@ export async function removePath(
   runtime: RuntimeEnv,
   opts?: { dryRun?: boolean; label?: string },
 ): Promise<RemovalResult> {
-  if (!target?.trim()) return { ok: false, skipped: true };
+  if (!target?.trim()) {
+    return { ok: false, skipped: true };
+  }
   const resolved = path.resolve(target);
   const label = opts?.label ?? resolved;
   const displayLabel = shortenHomeInString(label);

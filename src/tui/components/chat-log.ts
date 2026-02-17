@@ -56,6 +56,16 @@ export class ChatLog extends Container {
     this.addChild(new AssistantMessageComponent(text));
   }
 
+  dropAssistant(runId?: string) {
+    const effectiveRunId = this.resolveRunId(runId);
+    const existing = this.streamingRuns.get(effectiveRunId);
+    if (!existing) {
+      return;
+    }
+    this.removeChild(existing);
+    this.streamingRuns.delete(effectiveRunId);
+  }
+
   startTool(toolCallId: string, toolName: string, args: unknown) {
     const existing = this.toolById.get(toolCallId);
     if (existing) {
@@ -71,7 +81,9 @@ export class ChatLog extends Container {
 
   updateToolArgs(toolCallId: string, args: unknown) {
     const existing = this.toolById.get(toolCallId);
-    if (!existing) return;
+    if (!existing) {
+      return;
+    }
     existing.setArgs(args);
   }
 
@@ -81,7 +93,9 @@ export class ChatLog extends Container {
     opts?: { isError?: boolean; partial?: boolean },
   ) {
     const existing = this.toolById.get(toolCallId);
-    if (!existing) return;
+    if (!existing) {
+      return;
+    }
     if (opts?.partial) {
       existing.setPartialResult(result as Record<string, unknown>);
       return;

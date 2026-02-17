@@ -1,50 +1,44 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { createOpenClawTools } from "../agents/openclaw-tools.js";
+import { afterAll, beforeAll, describe, expect, it, type Mock } from "vitest";
 import { resolveSessionTranscriptPath } from "../config/sessions.js";
 import { emitAgentEvent } from "../infra/agent-events.js";
+import { captureEnv } from "../test-utils/env.js";
 import {
   agentCommand,
   getFreePort,
   installGatewayTestHooks,
   startGatewayServer,
+  testState,
 } from "./test-helpers.js";
+
+const { createOpenClawTools } = await import("../agents/openclaw-tools.js");
 
 installGatewayTestHooks({ scope: "suite" });
 
 let server: Awaited<ReturnType<typeof startGatewayServer>>;
 let gatewayPort: number;
-let prevGatewayPort: string | undefined;
-let prevGatewayToken: string | undefined;
+const gatewayToken = "test-token";
+let envSnapshot: ReturnType<typeof captureEnv>;
 
 beforeAll(async () => {
-  prevGatewayPort = process.env.OPENCLAW_GATEWAY_PORT;
-  prevGatewayToken = process.env.OPENCLAW_GATEWAY_TOKEN;
+  envSnapshot = captureEnv(["OPENCLAW_GATEWAY_PORT", "OPENCLAW_GATEWAY_TOKEN"]);
   gatewayPort = await getFreePort();
+  testState.gatewayAuth = { mode: "token", token: gatewayToken };
   process.env.OPENCLAW_GATEWAY_PORT = String(gatewayPort);
-  process.env.OPENCLAW_GATEWAY_TOKEN = "test-token";
+  process.env.OPENCLAW_GATEWAY_TOKEN = gatewayToken;
   server = await startGatewayServer(gatewayPort);
 });
 
 afterAll(async () => {
   await server.close();
-  if (prevGatewayPort === undefined) {
-    delete process.env.OPENCLAW_GATEWAY_PORT;
-  } else {
-    process.env.OPENCLAW_GATEWAY_PORT = prevGatewayPort;
-  }
-  if (prevGatewayToken === undefined) {
-    delete process.env.OPENCLAW_GATEWAY_TOKEN;
-  } else {
-    process.env.OPENCLAW_GATEWAY_TOKEN = prevGatewayToken;
-  }
+  envSnapshot.restore();
 });
 
 describe("sessions_send gateway loopback", () => {
   it("returns reply when lifecycle ends before agent.wait", async () => {
-    const spy = vi.mocked(agentCommand);
-    spy.mockImplementation(async (opts) => {
+    const spy = agentCommand as unknown as Mock<(opts: unknown) => Promise<void>>;
+    spy.mockImplementation(async (opts: unknown) => {
       const params = opts as {
         sessionId?: string;
         runId?: string;
@@ -87,7 +81,9 @@ describe("sessions_send gateway loopback", () => {
     });
 
     const tool = createOpenClawTools().find((candidate) => candidate.name === "sessions_send");
-    if (!tool) throw new Error("missing sessions_send tool");
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
 
     const result = await tool.execute("call-loopback", {
       sessionKey: "main",
@@ -103,15 +99,33 @@ describe("sessions_send gateway loopback", () => {
     expect(details.reply).toBe("pong");
     expect(details.sessionKey).toBe("main");
 
-    const firstCall = spy.mock.calls[0]?.[0] as { lane?: string } | undefined;
+    const firstCall = spy.mock.calls[0]?.[0] as
+      | { lane?: string; inputProvenance?: { kind?: string; sourceTool?: string } }
+      | undefined;
     expect(firstCall?.lane).toBe("nested");
+    expect(firstCall?.inputProvenance).toMatchObject({
+      kind: "inter_session",
+      sourceTool: "sessions_send",
+    });
   });
 });
 
 describe("sessions_send label lookup", () => {
   it("finds session by label and sends message", { timeout: 60_000 }, async () => {
-    const spy = vi.mocked(agentCommand);
-    spy.mockImplementation(async (opts) => {
+    // This is an operator feature; enable broader session tool targeting for this test.
+    const configPath = process.env.OPENCLAW_CONFIG_PATH;
+    if (!configPath) {
+      throw new Error("OPENCLAW_CONFIG_PATH missing in gateway test environment");
+    }
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({ tools: { sessions: { visibility: "all" } } }, null, 2) + "\n",
+      "utf-8",
+    );
+
+    const spy = agentCommand as unknown as Mock<(opts: unknown) => Promise<void>>;
+    spy.mockImplementation(async (opts: unknown) => {
       const params = opts as {
         sessionId?: string;
         runId?: string;
@@ -152,7 +166,9 @@ describe("sessions_send label lookup", () => {
     });
 
     const tool = createOpenClawTools().find((candidate) => candidate.name === "sessions_send");
-    if (!tool) throw new Error("missing sessions_send tool");
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
 
     // Send using label instead of sessionKey
     const result = await tool.execute("call-by-label", {
@@ -172,7 +188,9 @@ describe("sessions_send label lookup", () => {
 
   it("returns error when label not found", { timeout: 60_000 }, async () => {
     const tool = createOpenClawTools().find((candidate) => candidate.name === "sessions_send");
-    if (!tool) throw new Error("missing sessions_send tool");
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
 
     const result = await tool.execute("call-missing-label", {
       label: "nonexistent-label",
@@ -186,7 +204,9 @@ describe("sessions_send label lookup", () => {
 
   it("returns error when neither sessionKey nor label provided", { timeout: 60_000 }, async () => {
     const tool = createOpenClawTools().find((candidate) => candidate.name === "sessions_send");
-    if (!tool) throw new Error("missing sessions_send tool");
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
 
     const result = await tool.execute("call-no-key", {
       message: "hello",

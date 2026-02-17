@@ -1,5 +1,9 @@
 import type { OpenClawConfig } from "../config/config.js";
 import type { CliBackendConfig } from "../config/types.js";
+import {
+  CLI_FRESH_WATCHDOG_DEFAULTS,
+  CLI_RESUME_WATCHDOG_DEFAULTS,
+} from "./cli-watchdog-defaults.js";
 import { normalizeProviderId } from "./model-selection.js";
 
 export type ResolvedCliBackend = {
@@ -9,8 +13,10 @@ export type ResolvedCliBackend = {
 
 const CLAUDE_MODEL_ALIASES: Record<string, string> = {
   opus: "opus",
+  "opus-4.6": "opus",
   "opus-4.5": "opus",
   "opus-4": "opus",
+  "claude-opus-4-6": "opus",
   "claude-opus-4-5": "opus",
   "claude-opus-4": "opus",
   sonnet: "sonnet",
@@ -47,6 +53,12 @@ const DEFAULT_CLAUDE_BACKEND: CliBackendConfig = {
   systemPromptMode: "append",
   systemPromptWhen: "first",
   clearEnv: ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY_OLD"],
+  reliability: {
+    watchdog: {
+      fresh: { ...CLI_FRESH_WATCHDOG_DEFAULTS },
+      resume: { ...CLI_RESUME_WATCHDOG_DEFAULTS },
+    },
+  },
   serialize: true,
 };
 
@@ -71,6 +83,12 @@ const DEFAULT_CODEX_BACKEND: CliBackendConfig = {
   sessionMode: "existing",
   imageArg: "--image",
   imageMode: "repeat",
+  reliability: {
+    watchdog: {
+      fresh: { ...CLI_FRESH_WATCHDOG_DEFAULTS },
+      resume: { ...CLI_RESUME_WATCHDOG_DEFAULTS },
+    },
+  },
   serialize: true,
 };
 
@@ -83,13 +101,21 @@ function pickBackendConfig(
   normalizedId: string,
 ): CliBackendConfig | undefined {
   for (const [key, entry] of Object.entries(config)) {
-    if (normalizeBackendKey(key) === normalizedId) return entry;
+    if (normalizeBackendKey(key) === normalizedId) {
+      return entry;
+    }
   }
   return undefined;
 }
 
 function mergeBackendConfig(base: CliBackendConfig, override?: CliBackendConfig): CliBackendConfig {
-  if (!override) return { ...base };
+  if (!override) {
+    return { ...base };
+  }
+  const baseFresh = base.reliability?.watchdog?.fresh ?? {};
+  const baseResume = base.reliability?.watchdog?.resume ?? {};
+  const overrideFresh = override.reliability?.watchdog?.fresh ?? {};
+  const overrideResume = override.reliability?.watchdog?.resume ?? {};
   return {
     ...base,
     ...override,
@@ -100,6 +126,22 @@ function mergeBackendConfig(base: CliBackendConfig, override?: CliBackendConfig)
     sessionIdFields: override.sessionIdFields ?? base.sessionIdFields,
     sessionArgs: override.sessionArgs ?? base.sessionArgs,
     resumeArgs: override.resumeArgs ?? base.resumeArgs,
+    reliability: {
+      ...base.reliability,
+      ...override.reliability,
+      watchdog: {
+        ...base.reliability?.watchdog,
+        ...override.reliability?.watchdog,
+        fresh: {
+          ...baseFresh,
+          ...overrideFresh,
+        },
+        resume: {
+          ...baseResume,
+          ...overrideResume,
+        },
+      },
+    },
   };
 }
 
@@ -126,18 +168,26 @@ export function resolveCliBackendConfig(
   if (normalized === "claude-cli") {
     const merged = mergeBackendConfig(DEFAULT_CLAUDE_BACKEND, override);
     const command = merged.command?.trim();
-    if (!command) return null;
+    if (!command) {
+      return null;
+    }
     return { id: normalized, config: { ...merged, command } };
   }
   if (normalized === "codex-cli") {
     const merged = mergeBackendConfig(DEFAULT_CODEX_BACKEND, override);
     const command = merged.command?.trim();
-    if (!command) return null;
+    if (!command) {
+      return null;
+    }
     return { id: normalized, config: { ...merged, command } };
   }
 
-  if (!override) return null;
+  if (!override) {
+    return null;
+  }
   const command = override.command?.trim();
-  if (!command) return null;
+  if (!command) {
+    return null;
+  }
   return { id: normalized, config: { ...override, command } };
 }

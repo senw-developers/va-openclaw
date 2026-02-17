@@ -1,5 +1,10 @@
 import type { ChannelAccountSnapshot, ChannelStatusIssue } from "../types.js";
-import { appendMatchMetadata, asString, isRecord } from "./shared.js";
+import {
+  appendMatchMetadata,
+  asString,
+  isRecord,
+  resolveEnabledConfiguredAccountId,
+} from "./shared.js";
 
 type DiscordIntentSummary = {
   messageContent?: "enabled" | "limited" | "disabled";
@@ -30,7 +35,9 @@ type DiscordPermissionsAuditSummary = {
 };
 
 function readDiscordAccountStatus(value: ChannelAccountSnapshot): DiscordAccountStatus | null {
-  if (!isRecord(value)) return null;
+  if (!isRecord(value)) {
+    return null;
+  }
   return {
     accountId: value.accountId,
     enabled: value.enabled,
@@ -41,9 +48,13 @@ function readDiscordAccountStatus(value: ChannelAccountSnapshot): DiscordAccount
 }
 
 function readDiscordApplicationSummary(value: unknown): DiscordApplicationSummary {
-  if (!isRecord(value)) return {};
+  if (!isRecord(value)) {
+    return {};
+  }
   const intentsRaw = value.intents;
-  if (!isRecord(intentsRaw)) return {};
+  if (!isRecord(intentsRaw)) {
+    return {};
+  }
   return {
     intents: {
       messageContent:
@@ -57,7 +68,9 @@ function readDiscordApplicationSummary(value: unknown): DiscordApplicationSummar
 }
 
 function readDiscordPermissionsAuditSummary(value: unknown): DiscordPermissionsAuditSummary {
-  if (!isRecord(value)) return {};
+  if (!isRecord(value)) {
+    return {};
+  }
   const unresolvedChannels =
     typeof value.unresolvedChannels === "number" && Number.isFinite(value.unresolvedChannels)
       ? value.unresolvedChannels
@@ -66,9 +79,13 @@ function readDiscordPermissionsAuditSummary(value: unknown): DiscordPermissionsA
   const channels = Array.isArray(channelsRaw)
     ? (channelsRaw
         .map((entry) => {
-          if (!isRecord(entry)) return null;
+          if (!isRecord(entry)) {
+            return null;
+          }
           const channelId = asString(entry.channelId);
-          if (!channelId) return null;
+          if (!channelId) {
+            return null;
+          }
           const ok = typeof entry.ok === "boolean" ? entry.ok : undefined;
           const missing = Array.isArray(entry.missing)
             ? entry.missing.map((v) => asString(v)).filter(Boolean)
@@ -96,11 +113,13 @@ export function collectDiscordStatusIssues(
   const issues: ChannelStatusIssue[] = [];
   for (const entry of accounts) {
     const account = readDiscordAccountStatus(entry);
-    if (!account) continue;
-    const accountId = asString(account.accountId) ?? "default";
-    const enabled = account.enabled !== false;
-    const configured = account.configured === true;
-    if (!enabled || !configured) continue;
+    if (!account) {
+      continue;
+    }
+    const accountId = resolveEnabledConfiguredAccountId(account);
+    if (!accountId) {
+      continue;
+    }
 
     const app = readDiscordApplicationSummary(account.application);
     const messageContent = app.intents?.messageContent;
@@ -125,7 +144,9 @@ export function collectDiscordStatusIssues(
       });
     }
     for (const channel of audit.channels ?? []) {
-      if (channel.ok === true) continue;
+      if (channel.ok === true) {
+        continue;
+      }
       const missing = channel.missing?.length ? ` missing ${channel.missing.join(", ")}` : "";
       const error = channel.error ? `: ${channel.error}` : "";
       const baseMessage = `Channel ${channel.channelId} permission check failed.${missing}${error}`;

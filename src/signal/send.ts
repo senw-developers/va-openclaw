@@ -1,17 +1,18 @@
 import { loadConfig } from "../config/config.js";
 import { resolveMarkdownTableMode } from "../config/markdown-tables.js";
 import { mediaKindFromMime } from "../media/constants.js";
-import { saveMediaBuffer } from "../media/store.js";
-import { loadWebMedia } from "../web/media.js";
+import { resolveOutboundAttachmentFromUrl } from "../media/outbound-attachment.js";
 import { resolveSignalAccount } from "./accounts.js";
 import { signalRpcRequest } from "./client.js";
 import { markdownToSignalText, type SignalTextStyleRange } from "./format.js";
+import { resolveSignalRpcContext } from "./rpc-context.js";
 
 export type SignalSendOpts = {
   baseUrl?: string;
   account?: string;
   accountId?: string;
   mediaUrl?: string;
+  mediaLocalRoots?: readonly string[];
   maxBytes?: number;
   timeoutMs?: number;
   textMode?: "markdown" | "plain";
@@ -34,7 +35,9 @@ type SignalTarget =
 
 function parseTarget(raw: string): SignalTarget {
   let value = raw.trim();
-  if (!value) throw new Error("Signal recipient is required");
+  if (!value) {
+    throw new Error("Signal recipient is required");
+  }
   const lower = value.toLowerCase();
   if (lower.startsWith("signal:")) {
     value = value.slice("signal:".length).trim();
@@ -72,54 +75,24 @@ function buildTargetParams(
   allow: SignalTargetAllowlist,
 ): SignalTargetParams | null {
   if (target.type === "recipient") {
-    if (!allow.recipient) return null;
+    if (!allow.recipient) {
+      return null;
+    }
     return { recipient: [target.recipient] };
   }
   if (target.type === "group") {
-    if (!allow.group) return null;
+    if (!allow.group) {
+      return null;
+    }
     return { groupId: target.groupId };
   }
   if (target.type === "username") {
-    if (!allow.username) return null;
+    if (!allow.username) {
+      return null;
+    }
     return { username: [target.username] };
   }
   return null;
-}
-
-function resolveSignalRpcContext(
-  opts: SignalRpcOpts,
-  accountInfo?: ReturnType<typeof resolveSignalAccount>,
-) {
-  const hasBaseUrl = Boolean(opts.baseUrl?.trim());
-  const hasAccount = Boolean(opts.account?.trim());
-  const resolvedAccount =
-    accountInfo ||
-    (!hasBaseUrl || !hasAccount
-      ? resolveSignalAccount({
-          cfg: loadConfig(),
-          accountId: opts.accountId,
-        })
-      : undefined);
-  const baseUrl = opts.baseUrl?.trim() || resolvedAccount?.baseUrl;
-  if (!baseUrl) {
-    throw new Error("Signal base URL is required");
-  }
-  const account = opts.account?.trim() || resolvedAccount?.config.account?.trim();
-  return { baseUrl, account };
-}
-
-async function resolveAttachment(
-  mediaUrl: string,
-  maxBytes: number,
-): Promise<{ path: string; contentType?: string }> {
-  const media = await loadWebMedia(mediaUrl, maxBytes);
-  const saved = await saveMediaBuffer(
-    media.buffer,
-    media.contentType ?? undefined,
-    "outbound",
-    maxBytes,
-  );
-  return { path: saved.path, contentType: saved.contentType };
 }
 
 export async function sendMessageSignal(
@@ -139,7 +112,9 @@ export async function sendMessageSignal(
   let textStyles: SignalTextStyleRange[] = [];
   const textMode = opts.textMode ?? "markdown";
   const maxBytes = (() => {
-    if (typeof opts.maxBytes === "number") return opts.maxBytes;
+    if (typeof opts.maxBytes === "number") {
+      return opts.maxBytes;
+    }
     if (typeof accountInfo.config.mediaMaxMb === "number") {
       return accountInfo.config.mediaMaxMb * 1024 * 1024;
     }
@@ -151,7 +126,9 @@ export async function sendMessageSignal(
 
   let attachments: string[] | undefined;
   if (opts.mediaUrl?.trim()) {
-    const resolved = await resolveAttachment(opts.mediaUrl.trim(), maxBytes);
+    const resolved = await resolveOutboundAttachmentFromUrl(opts.mediaUrl.trim(), maxBytes, {
+      localRoots: opts.mediaLocalRoots,
+    });
     attachments = [resolved.path];
     const kind = mediaKindFromMime(resolved.contentType ?? undefined);
     if (!message && kind) {
@@ -186,7 +163,9 @@ export async function sendMessageSignal(
       (style) => `${style.start}:${style.length}:${style.style}`,
     );
   }
-  if (account) params.account = account;
+  if (account) {
+    params.account = account;
+  }
   if (attachments && attachments.length > 0) {
     params.attachments = attachments;
   }
@@ -221,10 +200,16 @@ export async function sendTypingSignal(
     recipient: true,
     group: true,
   });
-  if (!targetParams) return false;
+  if (!targetParams) {
+    return false;
+  }
   const params: Record<string, unknown> = { ...targetParams };
-  if (account) params.account = account;
-  if (opts.stop) params.stop = true;
+  if (account) {
+    params.account = account;
+  }
+  if (opts.stop) {
+    params.stop = true;
+  }
   await signalRpcRequest("sendTyping", params, {
     baseUrl,
     timeoutMs: opts.timeoutMs,
@@ -237,18 +222,24 @@ export async function sendReadReceiptSignal(
   targetTimestamp: number,
   opts: SignalRpcOpts & { type?: SignalReceiptType } = {},
 ): Promise<boolean> {
-  if (!Number.isFinite(targetTimestamp) || targetTimestamp <= 0) return false;
+  if (!Number.isFinite(targetTimestamp) || targetTimestamp <= 0) {
+    return false;
+  }
   const { baseUrl, account } = resolveSignalRpcContext(opts);
   const targetParams = buildTargetParams(parseTarget(to), {
     recipient: true,
   });
-  if (!targetParams) return false;
+  if (!targetParams) {
+    return false;
+  }
   const params: Record<string, unknown> = {
     ...targetParams,
     targetTimestamp,
     type: opts.type ?? "read",
   };
-  if (account) params.account = account;
+  if (account) {
+    params.account = account;
+  }
   await signalRpcRequest("sendReceipt", params, {
     baseUrl,
     timeoutMs: opts.timeoutMs,

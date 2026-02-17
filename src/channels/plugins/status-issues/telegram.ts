@@ -1,5 +1,10 @@
 import type { ChannelAccountSnapshot, ChannelStatusIssue } from "../types.js";
-import { appendMatchMetadata, asString, isRecord } from "./shared.js";
+import {
+  appendMatchMetadata,
+  asString,
+  isRecord,
+  resolveEnabledConfiguredAccountId,
+} from "./shared.js";
 
 type TelegramAccountStatus = {
   accountId?: unknown;
@@ -23,7 +28,9 @@ type TelegramGroupMembershipAuditSummary = {
 };
 
 function readTelegramAccountStatus(value: ChannelAccountSnapshot): TelegramAccountStatus | null {
-  if (!isRecord(value)) return null;
+  if (!isRecord(value)) {
+    return null;
+  }
   return {
     accountId: value.accountId,
     enabled: value.enabled,
@@ -36,7 +43,9 @@ function readTelegramAccountStatus(value: ChannelAccountSnapshot): TelegramAccou
 function readTelegramGroupMembershipAuditSummary(
   value: unknown,
 ): TelegramGroupMembershipAuditSummary {
-  if (!isRecord(value)) return {};
+  if (!isRecord(value)) {
+    return {};
+  }
   const unresolvedGroups =
     typeof value.unresolvedGroups === "number" && Number.isFinite(value.unresolvedGroups)
       ? value.unresolvedGroups
@@ -49,9 +58,13 @@ function readTelegramGroupMembershipAuditSummary(
   const groups = Array.isArray(groupsRaw)
     ? (groupsRaw
         .map((entry) => {
-          if (!isRecord(entry)) return null;
+          if (!isRecord(entry)) {
+            return null;
+          }
           const chatId = asString(entry.chatId);
-          if (!chatId) return null;
+          if (!chatId) {
+            return null;
+          }
           const ok = typeof entry.ok === "boolean" ? entry.ok : undefined;
           const status = asString(entry.status) ?? null;
           const error = asString(entry.error) ?? null;
@@ -70,11 +83,13 @@ export function collectTelegramStatusIssues(
   const issues: ChannelStatusIssue[] = [];
   for (const entry of accounts) {
     const account = readTelegramAccountStatus(entry);
-    if (!account) continue;
-    const accountId = asString(account.accountId) ?? "default";
-    const enabled = account.enabled !== false;
-    const configured = account.configured === true;
-    if (!enabled || !configured) continue;
+    if (!account) {
+      continue;
+    }
+    const accountId = resolveEnabledConfiguredAccountId(account);
+    if (!accountId) {
+      continue;
+    }
 
     if (account.allowUnmentionedGroups === true) {
       issues.push({
@@ -108,7 +123,9 @@ export function collectTelegramStatusIssues(
       });
     }
     for (const group of audit.groups ?? []) {
-      if (group.ok === true) continue;
+      if (group.ok === true) {
+        continue;
+      }
       const status = group.status ? ` status=${group.status}` : "";
       const err = group.error ? `: ${group.error}` : "";
       const baseMessage = `Group ${group.chatId} not reachable by bot.${status}${err}`;

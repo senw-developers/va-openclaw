@@ -1,6 +1,5 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { identityHasValues, parseIdentityMarkdown } from "../agents/identity-file.js";
 import { DEFAULT_IDENTITY_FILENAME } from "../agents/workspace.js";
@@ -71,7 +70,9 @@ export async function agentsSetIdentityCommand(
   runtime: RuntimeEnv = defaultRuntime,
 ) {
   const cfg = await requireValidConfig(runtime);
-  if (!cfg) return;
+  if (!cfg) {
+    return;
+  }
 
   const agentRaw = coerceTrimmed(opts.agent);
   const nameRaw = coerceTrimmed(opts.name);
@@ -214,9 +215,19 @@ export async function agentsSetIdentityCommand(
 
   logConfigUpdated(runtime);
   runtime.log(`Agent: ${agentId}`);
-  if (nextIdentity.name) runtime.log(`Name: ${nextIdentity.name}`);
-  if (nextIdentity.theme) runtime.log(`Theme: ${nextIdentity.theme}`);
-  if (nextIdentity.emoji) runtime.log(`Emoji: ${nextIdentity.emoji}`);
-  if (nextIdentity.avatar) runtime.log(`Avatar: ${nextIdentity.avatar}`);
-  if (workspaceDir) runtime.log(`Workspace: ${shortenHomePath(workspaceDir)}`);
+  if (nextIdentity.name) {
+    runtime.log(`Name: ${nextIdentity.name}`);
+  }
+  if (nextIdentity.theme) {
+    runtime.log(`Theme: ${nextIdentity.theme}`);
+  }
+  if (nextIdentity.emoji) {
+    runtime.log(`Emoji: ${nextIdentity.emoji}`);
+  }
+  if (nextIdentity.avatar) {
+    runtime.log(`Avatar: ${nextIdentity.avatar}`);
+  }
+  if (workspaceDir) {
+    runtime.log(`Workspace: ${shortenHomePath(workspaceDir)}`);
+  }
 }

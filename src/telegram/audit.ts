@@ -1,5 +1,5 @@
 import type { TelegramGroupConfig } from "../config/types.js";
-import { makeProxyFetch } from "./proxy.js";
+import { isRecord } from "../utils.js";
 
 const TELEGRAM_API_BASE = "https://api.telegram.org";
 
@@ -24,24 +24,6 @@ export type TelegramGroupMembershipAudit = {
 type TelegramApiOk<T> = { ok: true; result: T };
 type TelegramApiErr = { ok: false; description?: string };
 
-async function fetchWithTimeout(
-  url: string,
-  timeoutMs: number,
-  fetcher: typeof fetch,
-): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetcher(url, { signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
 export function collectTelegramUnmentionedGroupIds(
   groups: Record<string, TelegramGroupConfig> | undefined,
 ) {
@@ -57,12 +39,22 @@ export function collectTelegramUnmentionedGroupIds(
   const groupIds: string[] = [];
   let unresolvedGroups = 0;
   for (const [key, value] of Object.entries(groups)) {
-    if (key === "*") continue;
-    if (!value || typeof value !== "object") continue;
-    if ((value as TelegramGroupConfig).enabled === false) continue;
-    if ((value as TelegramGroupConfig).requireMention !== false) continue;
+    if (key === "*") {
+      continue;
+    }
+    if (!value || typeof value !== "object") {
+      continue;
+    }
+    if (value.enabled === false) {
+      continue;
+    }
+    if (value.requireMention !== false) {
+      continue;
+    }
     const id = String(key).trim();
-    if (!id) continue;
+    if (!id) {
+      continue;
+    }
     if (/^-?\d+$/.test(id)) {
       groupIds.push(id);
     } else {
@@ -93,18 +85,23 @@ export async function auditTelegramGroupMembership(params: {
     };
   }
 
-  const fetcher = params.proxyUrl ? makeProxyFetch(params.proxyUrl) : fetch;
+  // Lazy import to avoid pulling `undici` (ProxyAgent) into cold-path callers that only need
+  // `collectTelegramUnmentionedGroupIds` (e.g. config audits).
+  const fetcher = params.proxyUrl
+    ? (await import("./proxy.js")).makeProxyFetch(params.proxyUrl)
+    : fetch;
+  const { fetchWithTimeout } = await import("../utils/fetch-timeout.js");
   const base = `${TELEGRAM_API_BASE}/bot${token}`;
   const groups: TelegramGroupMembershipAuditEntry[] = [];
 
   for (const chatId of params.groupIds) {
     try {
       const url = `${base}/getChatMember?chat_id=${encodeURIComponent(chatId)}&user_id=${encodeURIComponent(String(params.botId))}`;
-      const res = await fetchWithTimeout(url, params.timeoutMs, fetcher);
+      const res = await fetchWithTimeout(url, {}, params.timeoutMs, fetcher);
       const json = (await res.json()) as TelegramApiOk<{ status?: string }> | TelegramApiErr;
-      if (!res.ok || !isRecord(json) || json.ok !== true) {
+      if (!res.ok || !isRecord(json) || !json.ok) {
         const desc =
-          isRecord(json) && json.ok === false && typeof json.description === "string"
+          isRecord(json) && !json.ok && typeof json.description === "string"
             ? json.description
             : `getChatMember failed (${res.status})`;
         groups.push({

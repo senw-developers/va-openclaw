@@ -4,11 +4,11 @@ import { updateSessionStore } from "../../config/sessions.js";
 import { logVerbose } from "../../globals.js";
 import { createInternalHookEvent, triggerInternalHook } from "../../hooks/internal-hooks.js";
 import { scheduleGatewaySigusr1Restart, triggerOpenClawRestart } from "../../infra/restart.js";
+import { loadCostUsageSummary, loadSessionCostSummary } from "../../infra/session-cost-usage.js";
+import { formatTokenCount, formatUsd } from "../../utils/usage-format.js";
 import { parseActivationCommand } from "../group-activation.js";
 import { parseSendPolicyCommand } from "../send-policy.js";
 import { normalizeUsageDisplay, resolveResponseUsageMode } from "../thinking.js";
-import { loadCostUsageSummary, loadSessionCostSummary } from "../../infra/session-cost-usage.js";
-import { formatTokenCount, formatUsd } from "../../utils/usage-format.js";
 import {
   formatAbortReplyText,
   isAbortTrigger,
@@ -22,9 +22,13 @@ function resolveSessionEntryForKey(
   store: Record<string, SessionEntry> | undefined,
   sessionKey: string | undefined,
 ) {
-  if (!store || !sessionKey) return {};
+  if (!store || !sessionKey) {
+    return {};
+  }
   const direct = store[sessionKey];
-  if (direct) return { entry: direct, key: sessionKey };
+  if (direct) {
+    return { entry: direct, key: sessionKey };
+  }
   return {};
 }
 
@@ -36,7 +40,9 @@ function resolveAbortTarget(params: {
 }) {
   const targetSessionKey = params.ctx.CommandTargetSessionKey?.trim() || params.sessionKey;
   const { entry, key } = resolveSessionEntryForKey(params.sessionStore, targetSessionKey);
-  if (entry && key) return { entry, key, sessionId: entry.sessionId };
+  if (entry && key) {
+    return { entry, key, sessionId: entry.sessionId };
+  }
   if (params.sessionEntry && params.sessionKey) {
     return {
       entry: params.sessionEntry,
@@ -47,10 +53,38 @@ function resolveAbortTarget(params: {
   return { entry: undefined, key: targetSessionKey, sessionId: undefined };
 }
 
+async function applyAbortTarget(params: {
+  abortTarget: ReturnType<typeof resolveAbortTarget>;
+  sessionStore?: Record<string, SessionEntry>;
+  storePath?: string;
+  abortKey?: string;
+}) {
+  const { abortTarget } = params;
+  if (abortTarget.sessionId) {
+    abortEmbeddedPiRun(abortTarget.sessionId);
+  }
+  if (abortTarget.entry && params.sessionStore && abortTarget.key) {
+    abortTarget.entry.abortedLastRun = true;
+    abortTarget.entry.updatedAt = Date.now();
+    params.sessionStore[abortTarget.key] = abortTarget.entry;
+    if (params.storePath) {
+      await updateSessionStore(params.storePath, (store) => {
+        store[abortTarget.key] = abortTarget.entry;
+      });
+    }
+  } else if (params.abortKey) {
+    setAbortMemory(params.abortKey, true);
+  }
+}
+
 export const handleActivationCommand: CommandHandler = async (params, allowTextCommands) => {
-  if (!allowTextCommands) return null;
+  if (!allowTextCommands) {
+    return null;
+  }
   const activationCommand = parseActivationCommand(params.command.commandBodyNormalized);
-  if (!activationCommand.hasCommand) return null;
+  if (!activationCommand.hasCommand) {
+    return null;
+  }
   if (!params.isGroup) {
     return {
       shouldContinue: false,
@@ -89,9 +123,13 @@ export const handleActivationCommand: CommandHandler = async (params, allowTextC
 };
 
 export const handleSendPolicyCommand: CommandHandler = async (params, allowTextCommands) => {
-  if (!allowTextCommands) return null;
+  if (!allowTextCommands) {
+    return null;
+  }
   const sendPolicyCommand = parseSendPolicyCommand(params.command.commandBodyNormalized);
-  if (!sendPolicyCommand.hasCommand) return null;
+  if (!sendPolicyCommand.hasCommand) {
+    return null;
+  }
   if (!params.command.isAuthorizedSender) {
     logVerbose(
       `Ignoring /send from unauthorized sender: ${params.command.senderId || "<unknown>"}`,
@@ -131,9 +169,13 @@ export const handleSendPolicyCommand: CommandHandler = async (params, allowTextC
 };
 
 export const handleUsageCommand: CommandHandler = async (params, allowTextCommands) => {
-  if (!allowTextCommands) return null;
+  if (!allowTextCommands) {
+    return null;
+  }
   const normalized = params.command.commandBodyNormalized;
-  if (normalized !== "/usage" && !normalized.startsWith("/usage ")) return null;
+  if (normalized !== "/usage" && !normalized.startsWith("/usage ")) {
+    return null;
+  }
   if (!params.command.isAuthorizedSender) {
     logVerbose(
       `Ignoring /usage from unauthorized sender: ${params.command.senderId || "<unknown>"}`,
@@ -149,6 +191,7 @@ export const handleUsageCommand: CommandHandler = async (params, allowTextComman
       sessionEntry: params.sessionEntry,
       sessionFile: params.sessionEntry?.sessionFile,
       config: params.cfg,
+      agentId: params.agentId,
     });
     const summary = await loadCostUsageSummary({ days: 30, config: params.cfg });
 
@@ -195,8 +238,11 @@ export const handleUsageCommand: CommandHandler = async (params, allowTextComman
   const next = requested ?? (current === "off" ? "tokens" : current === "tokens" ? "full" : "off");
 
   if (params.sessionEntry && params.sessionStore && params.sessionKey) {
-    if (next === "off") delete params.sessionEntry.responseUsage;
-    else params.sessionEntry.responseUsage = next;
+    if (next === "off") {
+      delete params.sessionEntry.responseUsage;
+    } else {
+      params.sessionEntry.responseUsage = next;
+    }
     params.sessionEntry.updatedAt = Date.now();
     params.sessionStore[params.sessionKey] = params.sessionEntry;
     if (params.storePath) {
@@ -215,8 +261,12 @@ export const handleUsageCommand: CommandHandler = async (params, allowTextComman
 };
 
 export const handleRestartCommand: CommandHandler = async (params, allowTextCommands) => {
-  if (!allowTextCommands) return null;
-  if (params.command.commandBodyNormalized !== "/restart") return null;
+  if (!allowTextCommands) {
+    return null;
+  }
+  if (params.command.commandBodyNormalized !== "/restart") {
+    return null;
+  }
   if (!params.command.isAuthorizedSender) {
     logVerbose(
       `Ignoring /restart from unauthorized sender: ${params.command.senderId || "<unknown>"}`,
@@ -260,8 +310,12 @@ export const handleRestartCommand: CommandHandler = async (params, allowTextComm
 };
 
 export const handleStopCommand: CommandHandler = async (params, allowTextCommands) => {
-  if (!allowTextCommands) return null;
-  if (params.command.commandBodyNormalized !== "/stop") return null;
+  if (!allowTextCommands) {
+    return null;
+  }
+  if (params.command.commandBodyNormalized !== "/stop") {
+    return null;
+  }
   if (!params.command.isAuthorizedSender) {
     logVerbose(
       `Ignoring /stop from unauthorized sender: ${params.command.senderId || "<unknown>"}`,
@@ -274,27 +328,18 @@ export const handleStopCommand: CommandHandler = async (params, allowTextCommand
     sessionEntry: params.sessionEntry,
     sessionStore: params.sessionStore,
   });
-  if (abortTarget.sessionId) {
-    abortEmbeddedPiRun(abortTarget.sessionId);
-  }
   const cleared = clearSessionQueues([abortTarget.key, abortTarget.sessionId]);
   if (cleared.followupCleared > 0 || cleared.laneCleared > 0) {
     logVerbose(
       `stop: cleared followups=${cleared.followupCleared} lane=${cleared.laneCleared} keys=${cleared.keys.join(",")}`,
     );
   }
-  if (abortTarget.entry && params.sessionStore && abortTarget.key) {
-    abortTarget.entry.abortedLastRun = true;
-    abortTarget.entry.updatedAt = Date.now();
-    params.sessionStore[abortTarget.key] = abortTarget.entry;
-    if (params.storePath) {
-      await updateSessionStore(params.storePath, (store) => {
-        store[abortTarget.key] = abortTarget.entry as SessionEntry;
-      });
-    }
-  } else if (params.command.abortKey) {
-    setAbortMemory(params.command.abortKey, true);
-  }
+  await applyAbortTarget({
+    abortTarget,
+    sessionStore: params.sessionStore,
+    storePath: params.storePath,
+    abortKey: params.command.abortKey,
+  });
 
   // Trigger internal hook for stop command
   const hookEvent = createInternalHookEvent(
@@ -319,28 +364,23 @@ export const handleStopCommand: CommandHandler = async (params, allowTextCommand
 };
 
 export const handleAbortTrigger: CommandHandler = async (params, allowTextCommands) => {
-  if (!allowTextCommands) return null;
-  if (!isAbortTrigger(params.command.rawBodyNormalized)) return null;
+  if (!allowTextCommands) {
+    return null;
+  }
+  if (!isAbortTrigger(params.command.rawBodyNormalized)) {
+    return null;
+  }
   const abortTarget = resolveAbortTarget({
     ctx: params.ctx,
     sessionKey: params.sessionKey,
     sessionEntry: params.sessionEntry,
     sessionStore: params.sessionStore,
   });
-  if (abortTarget.sessionId) {
-    abortEmbeddedPiRun(abortTarget.sessionId);
-  }
-  if (abortTarget.entry && params.sessionStore && abortTarget.key) {
-    abortTarget.entry.abortedLastRun = true;
-    abortTarget.entry.updatedAt = Date.now();
-    params.sessionStore[abortTarget.key] = abortTarget.entry;
-    if (params.storePath) {
-      await updateSessionStore(params.storePath, (store) => {
-        store[abortTarget.key] = abortTarget.entry as SessionEntry;
-      });
-    }
-  } else if (params.command.abortKey) {
-    setAbortMemory(params.command.abortKey, true);
-  }
+  await applyAbortTarget({
+    abortTarget,
+    sessionStore: params.sessionStore,
+    storePath: params.storePath,
+    abortKey: params.command.abortKey,
+  });
   return { shouldContinue: false, reply: { text: "⚙️ Agent was aborted." } };
 };

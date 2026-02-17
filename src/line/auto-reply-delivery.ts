@@ -2,8 +2,8 @@ import type { messagingApi } from "@line/bot-sdk";
 import type { ReplyPayload } from "../auto-reply/types.js";
 import type { FlexContainer } from "./flex-templates.js";
 import type { ProcessedLineMessage } from "./markdown-to-line.js";
+import type { SendLineReplyChunksParams } from "./reply-chunks.js";
 import type { LineChannelData, LineTemplateMessagePayload } from "./types.js";
-import type { LineReplyMessage, SendLineReplyChunksParams } from "./reply-chunks.js";
 
 export type LineAutoReplyDeps = {
   buildTemplateMessageFromPayload: (
@@ -12,19 +12,6 @@ export type LineAutoReplyDeps = {
   processLineMessage: (text: string) => ProcessedLineMessage;
   chunkMarkdownText: (text: string, limit: number) => string[];
   sendLineReplyChunks: (params: SendLineReplyChunksParams) => Promise<{ replyTokenUsed: boolean }>;
-  replyMessageLine: (
-    replyToken: string,
-    messages: messagingApi.Message[],
-    opts?: { accountId?: string },
-  ) => Promise<unknown>;
-  pushMessageLine: (to: string, text: string, opts?: { accountId?: string }) => Promise<unknown>;
-  pushTextMessageWithQuickReplies: (
-    to: string,
-    text: string,
-    quickReplies: string[],
-    opts?: { accountId?: string },
-  ) => Promise<unknown>;
-  createTextMessageWithQuickReplies: (text: string, quickReplies: string[]) => LineReplyMessage;
   createQuickReplyItems: (labels: string[]) => messagingApi.QuickReply;
   pushMessagesLine: (
     to: string,
@@ -42,8 +29,14 @@ export type LineAutoReplyDeps = {
     latitude: number;
     longitude: number;
   }) => messagingApi.LocationMessage;
-  onReplyError?: (err: unknown) => void;
-};
+} & Pick<
+  SendLineReplyChunksParams,
+  | "replyMessageLine"
+  | "pushMessageLine"
+  | "pushTextMessageWithQuickReplies"
+  | "createTextMessageWithQuickReplies"
+  | "onReplyError"
+>;
 
 export async function deliverLineAutoReply(params: {
   payload: ReplyPayload;
@@ -59,7 +52,9 @@ export async function deliverLineAutoReply(params: {
   let replyTokenUsed = params.replyTokenUsed;
 
   const pushLineMessages = async (messages: messagingApi.Message[]): Promise<void> => {
-    if (messages.length === 0) return;
+    if (messages.length === 0) {
+      return;
+    }
     for (let i = 0; i < messages.length; i += 5) {
       await deps.pushMessagesLine(to, messages.slice(i, i + 5), {
         accountId,
@@ -71,7 +66,9 @@ export async function deliverLineAutoReply(params: {
     messages: messagingApi.Message[],
     allowReplyToken: boolean,
   ): Promise<void> => {
-    if (messages.length === 0) return;
+    if (messages.length === 0) {
+      return;
+    }
 
     let remaining = messages;
     if (allowReplyToken && replyToken && !replyTokenUsed) {
@@ -121,9 +118,7 @@ export async function deliverLineAutoReply(params: {
     : { text: "", flexMessages: [] };
 
   for (const flexMsg of processed.flexMessages) {
-    richMessages.push(
-      deps.createFlexMessage(flexMsg.altText.slice(0, 400), flexMsg.contents as FlexContainer),
-    );
+    richMessages.push(deps.createFlexMessage(flexMsg.altText.slice(0, 400), flexMsg.contents));
   }
 
   const chunks = processed.text ? deps.chunkMarkdownText(processed.text, textLimit) : [];

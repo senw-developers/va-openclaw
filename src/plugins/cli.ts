@@ -1,5 +1,4 @@
 import type { Command } from "commander";
-
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { loadConfig } from "../config/config.js";
@@ -45,8 +44,8 @@ export function registerPluginCliCommands(program: Command, cfg?: OpenClawConfig
         workspaceDir,
         logger,
       });
-      if (result && typeof (result as Promise<void>).then === "function") {
-        void (result as Promise<void>).catch((err) => {
+      if (result && typeof result.then === "function") {
+        void result.catch((err) => {
           log.warn(`plugin CLI register failed (${entry.pluginId}): ${String(err)}`);
         });
       }

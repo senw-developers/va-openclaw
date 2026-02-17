@@ -1,9 +1,10 @@
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { createEditTool, createReadTool, createWriteTool } from "@mariozechner/pi-coding-agent";
-
 import { detectMime } from "../media/mime.js";
+import { sniffMimeFromBase64 } from "../media/sniff-mime-from-base64.js";
 import type { AnyAgentTool } from "./pi-tools.types.js";
 import { assertSandboxPath } from "./sandbox-paths.js";
+import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
 import { sanitizeToolResultImages } from "./tool-images.js";
 
 // NOTE(steipete): Upstream read now does file-magic MIME detection; we keep the wrapper
@@ -11,22 +12,6 @@ import { sanitizeToolResultImages } from "./tool-images.js";
 type ToolContentBlock = AgentToolResult<unknown>["content"][number];
 type ImageContentBlock = Extract<ToolContentBlock, { type: "image" }>;
 type TextContentBlock = Extract<ToolContentBlock, { type: "text" }>;
-
-async function sniffMimeFromBase64(base64: string): Promise<string | undefined> {
-  const trimmed = base64.trim();
-  if (!trimmed) return undefined;
-
-  const take = Math.min(256, trimmed.length);
-  const sliceLen = take - (take % 4);
-  if (sliceLen < 8) return undefined;
-
-  try {
-    const head = Buffer.from(trimmed.slice(0, sliceLen), "base64");
-    return await detectMime({ buffer: head });
-  } catch {
-    return undefined;
-  }
-}
 
 function rewriteReadImageHeader(text: string, mimeType: string): string {
   // pi-coding-agent uses: "Read image file [image/png]"
@@ -50,14 +35,18 @@ async function normalizeReadImageResult(
       typeof (b as { data?: unknown }).data === "string" &&
       typeof (b as { mimeType?: unknown }).mimeType === "string",
   );
-  if (!image) return result;
+  if (!image) {
+    return result;
+  }
 
   if (!image.data.trim()) {
     throw new Error(`read: image payload is empty (${filePath})`);
   }
 
   const sniffed = await sniffMimeFromBase64(image.data);
-  if (!sniffed) return result;
+  if (!sniffed) {
+    return result;
+  }
 
   if (!sniffed.startsWith("image/")) {
     throw new Error(
@@ -65,7 +54,9 @@ async function normalizeReadImageResult(
     );
   }
 
-  if (sniffed === image.mimeType) return result;
+  if (sniffed === image.mimeType) {
+    return result;
+  }
 
   const nextContent = content.map((block) => {
     if (block && typeof block === "object" && (block as { type?: unknown }).type === "image") {
@@ -96,9 +87,18 @@ type RequiredParamGroup = {
   label?: string;
 };
 
+const RETRY_GUIDANCE_SUFFIX = " Supply correct parameters before retrying.";
+
+function parameterValidationError(message: string): Error {
+  return new Error(`${message}.${RETRY_GUIDANCE_SUFFIX}`);
+}
+
 export const CLAUDE_PARAM_GROUPS = {
   read: [{ keys: ["path", "file_path"], label: "path (path or file_path)" }],
-  write: [{ keys: ["path", "file_path"], label: "path (path or file_path)" }],
+  write: [
+    { keys: ["path", "file_path"], label: "path (path or file_path)" },
+    { keys: ["content"], label: "content" },
+  ],
   edit: [
     { keys: ["path", "file_path"], label: "path (path or file_path)" },
     {
@@ -112,11 +112,63 @@ export const CLAUDE_PARAM_GROUPS = {
   ],
 } as const;
 
+function extractStructuredText(value: unknown, depth = 0): string | undefined {
+  if (depth > 6) {
+    return undefined;
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((entry) => extractStructuredText(entry, depth + 1))
+      .filter((entry): entry is string => typeof entry === "string");
+    return parts.length > 0 ? parts.join("") : undefined;
+  }
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.text === "string") {
+    return record.text;
+  }
+  if (typeof record.content === "string") {
+    return record.content;
+  }
+  if (Array.isArray(record.content)) {
+    return extractStructuredText(record.content, depth + 1);
+  }
+  if (Array.isArray(record.parts)) {
+    return extractStructuredText(record.parts, depth + 1);
+  }
+  if (typeof record.value === "string" && record.value.length > 0) {
+    const type = typeof record.type === "string" ? record.type.toLowerCase() : "";
+    const kind = typeof record.kind === "string" ? record.kind.toLowerCase() : "";
+    if (type.includes("text") || kind === "text") {
+      return record.value;
+    }
+  }
+  return undefined;
+}
+
+function normalizeTextLikeParam(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  if (typeof value === "string") {
+    return;
+  }
+  const extracted = extractStructuredText(value);
+  if (typeof extracted === "string") {
+    record[key] = extracted;
+  }
+}
+
 // Normalize tool parameters from Claude Code conventions to pi-coding-agent conventions.
 // Claude Code uses file_path/old_string/new_string while pi-coding-agent uses path/oldText/newText.
 // This prevents models trained on Claude Code from getting stuck in tool-call loops.
 export function normalizeToolParams(params: unknown): Record<string, unknown> | undefined {
-  if (!params || typeof params !== "object") return undefined;
+  if (!params || typeof params !== "object") {
+    return undefined;
+  }
   const record = params as Record<string, unknown>;
   const normalized = { ...record };
   // file_path → path (read, write, edit)
@@ -134,6 +186,11 @@ export function normalizeToolParams(params: unknown): Record<string, unknown> | 
     normalized.newText = normalized.new_string;
     delete normalized.new_string;
   }
+  // Some providers/models emit text payloads as structured blocks instead of raw strings.
+  // Normalize these for write/edit so content matching and writes stay deterministic.
+  normalizeTextLikeParam(normalized, "content");
+  normalizeTextLikeParam(normalized, "oldText");
+  normalizeTextLikeParam(normalized, "newText");
   return normalized;
 }
 
@@ -160,7 +217,9 @@ export function patchToolSchemaForClaudeCompatibility(tool: AnyAgentTool): AnyAg
   ];
 
   for (const { original, alias } of aliasPairs) {
-    if (!(original in properties)) continue;
+    if (!(original in properties)) {
+      continue;
+    }
     if (!(alias in properties)) {
       properties[alias] = properties[original];
       changed = true;
@@ -172,14 +231,16 @@ export function patchToolSchemaForClaudeCompatibility(tool: AnyAgentTool): AnyAg
     }
   }
 
-  if (!changed) return tool;
+  if (!changed) {
+    return tool;
+  }
 
   return {
     ...tool,
     parameters: {
       ...schema,
       properties,
-      ...(required.length > 0 ? { required } : {}),
+      required,
     },
   };
 }
@@ -190,22 +251,35 @@ export function assertRequiredParams(
   toolName: string,
 ): void {
   if (!record || typeof record !== "object") {
-    throw new Error(`Missing parameters for ${toolName}`);
+    throw parameterValidationError(`Missing parameters for ${toolName}`);
   }
 
+  const missingLabels: string[] = [];
   for (const group of groups) {
     const satisfied = group.keys.some((key) => {
-      if (!(key in record)) return false;
+      if (!(key in record)) {
+        return false;
+      }
       const value = record[key];
-      if (typeof value !== "string") return false;
-      if (group.allowEmpty) return true;
+      if (typeof value !== "string") {
+        return false;
+      }
+      if (group.allowEmpty) {
+        return true;
+      }
       return value.trim().length > 0;
     });
 
     if (!satisfied) {
       const label = group.label ?? group.keys.join(" or ");
-      throw new Error(`Missing required parameter: ${label}`);
+      missingLabels.push(label);
     }
+  }
+
+  if (missingLabels.length > 0) {
+    const joined = missingLabels.join(", ");
+    const noun = missingLabels.length === 1 ? "parameter" : "parameters";
+    throw parameterValidationError(`Missing required ${noun}: ${joined}`);
   }
 }
 
@@ -230,7 +304,7 @@ export function wrapToolParamNormalization(
   };
 }
 
-function wrapSandboxPathGuard(tool: AnyAgentTool, root: string): AnyAgentTool {
+export function wrapToolWorkspaceRootGuard(tool: AnyAgentTool, root: string): AnyAgentTool {
   return {
     ...tool,
     execute: async (toolCallId, args, signal, onUpdate) => {
@@ -247,19 +321,30 @@ function wrapSandboxPathGuard(tool: AnyAgentTool, root: string): AnyAgentTool {
   };
 }
 
-export function createSandboxedReadTool(root: string) {
-  const base = createReadTool(root) as unknown as AnyAgentTool;
-  return wrapSandboxPathGuard(createOpenClawReadTool(base), root);
+type SandboxToolParams = {
+  root: string;
+  bridge: SandboxFsBridge;
+};
+
+export function createSandboxedReadTool(params: SandboxToolParams) {
+  const base = createReadTool(params.root, {
+    operations: createSandboxReadOperations(params),
+  }) as unknown as AnyAgentTool;
+  return createOpenClawReadTool(base);
 }
 
-export function createSandboxedWriteTool(root: string) {
-  const base = createWriteTool(root) as unknown as AnyAgentTool;
-  return wrapSandboxPathGuard(wrapToolParamNormalization(base, CLAUDE_PARAM_GROUPS.write), root);
+export function createSandboxedWriteTool(params: SandboxToolParams) {
+  const base = createWriteTool(params.root, {
+    operations: createSandboxWriteOperations(params),
+  }) as unknown as AnyAgentTool;
+  return wrapToolParamNormalization(base, CLAUDE_PARAM_GROUPS.write);
 }
 
-export function createSandboxedEditTool(root: string) {
-  const base = createEditTool(root) as unknown as AnyAgentTool;
-  return wrapSandboxPathGuard(wrapToolParamNormalization(base, CLAUDE_PARAM_GROUPS.edit), root);
+export function createSandboxedEditTool(params: SandboxToolParams) {
+  const base = createEditTool(params.root, {
+    operations: createSandboxEditOperations(params),
+  }) as unknown as AnyAgentTool;
+  return wrapToolParamNormalization(base, CLAUDE_PARAM_GROUPS.edit);
 }
 
 export function createOpenClawReadTool(base: AnyAgentTool): AnyAgentTool {
@@ -272,14 +357,60 @@ export function createOpenClawReadTool(base: AnyAgentTool): AnyAgentTool {
         normalized ??
         (params && typeof params === "object" ? (params as Record<string, unknown>) : undefined);
       assertRequiredParams(record, CLAUDE_PARAM_GROUPS.read, base.name);
-      const result = (await base.execute(
-        toolCallId,
-        normalized ?? params,
-        signal,
-      )) as AgentToolResult<unknown>;
+      const result = await base.execute(toolCallId, normalized ?? params, signal);
       const filePath = typeof record?.path === "string" ? String(record.path) : "<unknown>";
       const normalizedResult = await normalizeReadImageResult(result, filePath);
       return sanitizeToolResultImages(normalizedResult, `read:${filePath}`);
     },
   };
+}
+
+function createSandboxReadOperations(params: SandboxToolParams) {
+  return {
+    readFile: (absolutePath: string) =>
+      params.bridge.readFile({ filePath: absolutePath, cwd: params.root }),
+    access: async (absolutePath: string) => {
+      const stat = await params.bridge.stat({ filePath: absolutePath, cwd: params.root });
+      if (!stat) {
+        throw createFsAccessError("ENOENT", absolutePath);
+      }
+    },
+    detectImageMimeType: async (absolutePath: string) => {
+      const buffer = await params.bridge.readFile({ filePath: absolutePath, cwd: params.root });
+      const mime = await detectMime({ buffer, filePath: absolutePath });
+      return mime && mime.startsWith("image/") ? mime : undefined;
+    },
+  } as const;
+}
+
+function createSandboxWriteOperations(params: SandboxToolParams) {
+  return {
+    mkdir: async (dir: string) => {
+      await params.bridge.mkdirp({ filePath: dir, cwd: params.root });
+    },
+    writeFile: async (absolutePath: string, content: string) => {
+      await params.bridge.writeFile({ filePath: absolutePath, cwd: params.root, data: content });
+    },
+  } as const;
+}
+
+function createSandboxEditOperations(params: SandboxToolParams) {
+  return {
+    readFile: (absolutePath: string) =>
+      params.bridge.readFile({ filePath: absolutePath, cwd: params.root }),
+    writeFile: (absolutePath: string, content: string) =>
+      params.bridge.writeFile({ filePath: absolutePath, cwd: params.root, data: content }),
+    access: async (absolutePath: string) => {
+      const stat = await params.bridge.stat({ filePath: absolutePath, cwd: params.root });
+      if (!stat) {
+        throw createFsAccessError("ENOENT", absolutePath);
+      }
+    },
+  } as const;
+}
+
+function createFsAccessError(code: string, filePath: string): NodeJS.ErrnoException {
+  const error = new Error(`Sandbox FS error (${code}): ${filePath}`) as NodeJS.ErrnoException;
+  error.code = code;
+  return error;
 }

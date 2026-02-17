@@ -4,11 +4,11 @@ import { createExecTool } from "../../agents/bash-tools.js";
 import { resolveSandboxRuntimeStatus } from "../../agents/sandbox.js";
 import { killProcessTree } from "../../agents/shell-utils.js";
 import type { OpenClawConfig } from "../../config/config.js";
-import { formatCliCommand } from "../../cli/command-format.js";
 import { logVerbose } from "../../globals.js";
 import { clampInt } from "../../utils.js";
 import type { MsgContext } from "../templating.js";
 import type { ReplyPayload } from "../types.js";
+import { formatElevatedUnavailableMessage } from "./elevated-unavailable.js";
 import { stripMentions, stripStructuralPrefixes } from "./mentions.js";
 
 const CHAT_BASH_SCOPE_KEY = "chat:bash";
@@ -35,19 +35,25 @@ let activeJob: ActiveBashJob | null = null;
 
 function resolveForegroundMs(cfg: OpenClawConfig): number {
   const raw = cfg.commands?.bashForegroundMs;
-  if (typeof raw !== "number" || Number.isNaN(raw)) return DEFAULT_FOREGROUND_MS;
+  if (typeof raw !== "number" || Number.isNaN(raw)) {
+    return DEFAULT_FOREGROUND_MS;
+  }
   return clampInt(raw, 0, MAX_FOREGROUND_MS);
 }
 
 function formatSessionSnippet(sessionId: string) {
   const trimmed = sessionId.trim();
-  if (trimmed.length <= 12) return trimmed;
+  if (trimmed.length <= 12) {
+    return trimmed;
+  }
   return `${trimmed.slice(0, 8)}…`;
 }
 
 function formatOutputBlock(text: string) {
   const trimmed = text.trim();
-  if (!trimmed) return "(no output)";
+  if (!trimmed) {
+    return "(no output)";
+  }
   return `\`\`\`txt\n${trimmed}\n\`\`\``;
 }
 
@@ -56,7 +62,9 @@ function parseBashRequest(raw: string): BashRequest | null {
   let restSource = "";
   if (trimmed.toLowerCase().startsWith("/bash")) {
     const match = trimmed.match(/^\/bash(?:\s*:\s*|\s+|$)([\s\S]*)$/i);
-    if (!match) return null;
+    if (!match) {
+      return null;
+    }
     restSource = match[1] ?? "";
   } else if (trimmed.startsWith("!")) {
     restSource = trimmed.slice(1);
@@ -68,7 +76,9 @@ function parseBashRequest(raw: string): BashRequest | null {
   }
 
   const rest = restSource.trimStart();
-  if (!rest) return { action: "help" };
+  if (!rest) {
+    return { action: "help" };
+  }
   const tokenMatch = rest.match(/^(\S+)(?:\s+([\s\S]+))?$/);
   const token = tokenMatch?.[1]?.trim() ?? "";
   const remainder = tokenMatch?.[2]?.trim() ?? "";
@@ -100,17 +110,27 @@ function resolveRawCommandBody(params: {
 
 function getScopedSession(sessionId: string) {
   const running = getSession(sessionId);
-  if (running && running.scopeKey === CHAT_BASH_SCOPE_KEY) return { running };
+  if (running && running.scopeKey === CHAT_BASH_SCOPE_KEY) {
+    return { running };
+  }
   const finished = getFinishedSession(sessionId);
-  if (finished && finished.scopeKey === CHAT_BASH_SCOPE_KEY) return { finished };
+  if (finished && finished.scopeKey === CHAT_BASH_SCOPE_KEY) {
+    return { finished };
+  }
   return {};
 }
 
 function ensureActiveJobState() {
-  if (!activeJob) return null;
-  if (activeJob.state === "starting") return activeJob;
+  if (!activeJob) {
+    return null;
+  }
+  if (activeJob.state === "starting") {
+    return activeJob;
+  }
   const { running, finished } = getScopedSession(activeJob.sessionId);
-  if (running) return activeJob;
+  if (running) {
+    return activeJob;
+  }
   if (finished) {
     activeJob = null;
     return null;
@@ -120,12 +140,20 @@ function ensureActiveJobState() {
 }
 
 function attachActiveWatcher(sessionId: string) {
-  if (!activeJob || activeJob.state !== "running") return;
-  if (activeJob.sessionId !== sessionId) return;
-  if (activeJob.watcherAttached) return;
+  if (!activeJob || activeJob.state !== "running") {
+    return;
+  }
+  if (activeJob.sessionId !== sessionId) {
+    return;
+  }
+  if (activeJob.watcherAttached) {
+    return;
+  }
   const { running } = getScopedSession(sessionId);
   const child = running?.child;
-  if (!child) return;
+  if (!child) {
+    return;
+  }
   activeJob.watcherAttached = true;
   child.once("close", () => {
     if (activeJob?.state === "running" && activeJob.sessionId === sessionId) {
@@ -144,35 +172,6 @@ function buildUsageReply(): ReplyPayload {
       "- /bash ... (alias; same subcommands as !)",
     ].join("\n"),
   };
-}
-
-function formatElevatedUnavailableMessage(params: {
-  runtimeSandboxed: boolean;
-  failures: Array<{ gate: string; key: string }>;
-  sessionKey?: string;
-}): string {
-  const lines: string[] = [];
-  lines.push(
-    `elevated is not available right now (runtime=${params.runtimeSandboxed ? "sandboxed" : "direct"}).`,
-  );
-  if (params.failures.length > 0) {
-    lines.push(`Failing gates: ${params.failures.map((f) => `${f.gate} (${f.key})`).join(", ")}`);
-  } else {
-    lines.push(
-      "Failing gates: enabled (tools.elevated.enabled / agents.list[].tools.elevated.enabled), allowFrom (tools.elevated.allowFrom.<provider>).",
-    );
-  }
-  lines.push("Fix-it keys:");
-  lines.push("- tools.elevated.enabled");
-  lines.push("- tools.elevated.allowFrom.<provider>");
-  lines.push("- agents.list[].tools.elevated.enabled");
-  lines.push("- agents.list[].tools.elevated.allowFrom.<provider>");
-  if (params.sessionKey) {
-    lines.push(
-      `See: ${formatCliCommand(`openclaw sandbox explain --session ${params.sessionKey}`)}`,
-    );
-  }
-  return lines.join("\n");
 }
 
 export async function handleBashChatCommand(params: {
@@ -317,7 +316,9 @@ export async function handleBashChatCommand(params: {
   }
 
   const commandText = request.command.trim();
-  if (!commandText) return buildUsageReply();
+  if (!commandText) {
+    return buildUsageReply();
+  }
 
   activeJob = {
     state: "starting",
@@ -330,12 +331,14 @@ export async function handleBashChatCommand(params: {
     const shouldBackgroundImmediately = foregroundMs <= 0;
     const timeoutSec = params.cfg.tools?.exec?.timeoutSec;
     const notifyOnExit = params.cfg.tools?.exec?.notifyOnExit;
+    const notifyOnExitEmptySuccess = params.cfg.tools?.exec?.notifyOnExitEmptySuccess;
     const execTool = createExecTool({
       scopeKey: CHAT_BASH_SCOPE_KEY,
       allowBackground: true,
       timeoutSec,
       sessionKey: params.sessionKey,
       notifyOnExit,
+      notifyOnExitEmptySuccess,
       elevated: {
         enabled: params.elevated.enabled,
         allowed: params.elevated.allowed,

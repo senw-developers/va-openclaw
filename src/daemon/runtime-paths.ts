@@ -2,7 +2,6 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-
 import { isSupportedNodeVersion } from "../infra/runtime-guard.js";
 
 const VERSION_MANAGER_MARKERS = [
@@ -18,6 +17,12 @@ const VERSION_MANAGER_MARKERS = [
 
 function getPathModule(platform: NodeJS.Platform) {
   return platform === "win32" ? path.win32 : path.posix;
+}
+
+function isNodeExecPath(execPath: string, platform: NodeJS.Platform): boolean {
+  const pathModule = getPathModule(platform);
+  const base = pathModule.basename(execPath).toLowerCase();
+  return base === "node" || base === "node.exe";
 }
 
 function normalizeForCompare(input: string, platform: NodeJS.Platform): string {
@@ -124,7 +129,9 @@ export async function resolveSystemNodeInfo(params: {
   const env = params.env ?? process.env;
   const platform = params.platform ?? process.platform;
   const systemNode = await resolveSystemNodePath(env, platform);
-  if (!systemNode) return null;
+  if (!systemNode) {
+    return null;
+  }
 
   const version = await resolveNodeVersion(systemNode, params.execFile ?? execFileAsync);
   return {
@@ -138,7 +145,9 @@ export function renderSystemNodeWarning(
   systemNode: SystemNodeInfo | null,
   selectedNodePath?: string,
 ): string | null {
-  if (!systemNode || systemNode.supported) return null;
+  if (!systemNode || systemNode.supported) {
+    return null;
+  }
   const versionLabel = systemNode.version ?? "unknown";
   const selectedLabel = selectedNodePath ? ` Using ${selectedNodePath} for the daemon.` : "";
   return `System Node ${versionLabel} at ${systemNode.path} is below the required Node 22+.${selectedLabel} Install Node 22+ from nodejs.org or Homebrew.`;
@@ -149,9 +158,28 @@ export async function resolvePreferredNodePath(params: {
   runtime?: string;
   platform?: NodeJS.Platform;
   execFile?: ExecFileAsync;
+  execPath?: string;
 }): Promise<string | undefined> {
-  if (params.runtime !== "node") return undefined;
+  if (params.runtime !== "node") {
+    return undefined;
+  }
+
+  // Prefer the node that is currently running `openclaw gateway install`.
+  // This respects the user's active version manager (fnm/nvm/volta/etc.).
+  const platform = params.platform ?? process.platform;
+  const currentExecPath = params.execPath ?? process.execPath;
+  if (currentExecPath && isNodeExecPath(currentExecPath, platform)) {
+    const execFileImpl = params.execFile ?? execFileAsync;
+    const version = await resolveNodeVersion(currentExecPath, execFileImpl);
+    if (isSupportedNodeVersion(version)) {
+      return currentExecPath;
+    }
+  }
+
+  // Fall back to system node.
   const systemNode = await resolveSystemNodeInfo(params);
-  if (!systemNode?.supported) return undefined;
+  if (!systemNode?.supported) {
+    return undefined;
+  }
   return systemNode.path;
 }

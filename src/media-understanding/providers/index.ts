@@ -6,6 +6,7 @@ import { googleProvider } from "./google/index.js";
 import { groqProvider } from "./groq/index.js";
 import { minimaxProvider } from "./minimax/index.js";
 import { openaiProvider } from "./openai/index.js";
+import { zaiProvider } from "./zai/index.js";
 
 const PROVIDERS: MediaUnderstandingProvider[] = [
   groqProvider,
@@ -13,12 +14,15 @@ const PROVIDERS: MediaUnderstandingProvider[] = [
   googleProvider,
   anthropicProvider,
   minimaxProvider,
+  zaiProvider,
   deepgramProvider,
 ];
 
 export function normalizeMediaProviderId(id: string): string {
   const normalized = normalizeProviderId(id);
-  if (normalized === "gemini") return "google";
+  if (normalized === "gemini") {
+    return "google";
+  }
   return normalized;
 }
 

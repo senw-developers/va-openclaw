@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
-import fs from "node:fs/promises";
-import path from "node:path";
-import { resolveStateDir } from "../config/paths.js";
+import {
+  createAsyncLock,
+  pruneExpiredPending,
+  readJsonFile,
+  resolvePairingPaths,
+  writeJsonAtomic,
+} from "./pairing-files.js";
+import { generatePairingToken, verifyPairingToken } from "./pairing-token.js";
 
 export type NodePairingPendingRequest = {
   requestId: string;
@@ -54,88 +59,27 @@ type NodePairingStateFile = {
 
 const PENDING_TTL_MS = 5 * 60 * 1000;
 
-function resolvePaths(baseDir?: string) {
-  const root = baseDir ?? resolveStateDir();
-  const dir = path.join(root, "nodes");
-  return {
-    dir,
-    pendingPath: path.join(dir, "pending.json"),
-    pairedPath: path.join(dir, "paired.json"),
-  };
-}
-
-async function readJSON<T>(filePath: string): Promise<T | null> {
-  try {
-    const raw = await fs.readFile(filePath, "utf8");
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
-}
-
-async function writeJSONAtomic(filePath: string, value: unknown) {
-  const dir = path.dirname(filePath);
-  await fs.mkdir(dir, { recursive: true });
-  const tmp = `${filePath}.${randomUUID()}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(value, null, 2), "utf8");
-  try {
-    await fs.chmod(tmp, 0o600);
-  } catch {
-    // best-effort; ignore on platforms without chmod
-  }
-  await fs.rename(tmp, filePath);
-  try {
-    await fs.chmod(filePath, 0o600);
-  } catch {
-    // best-effort; ignore on platforms without chmod
-  }
-}
-
-function pruneExpiredPending(
-  pendingById: Record<string, NodePairingPendingRequest>,
-  nowMs: number,
-) {
-  for (const [id, req] of Object.entries(pendingById)) {
-    if (nowMs - req.ts > PENDING_TTL_MS) {
-      delete pendingById[id];
-    }
-  }
-}
-
-let lock: Promise<void> = Promise.resolve();
-async function withLock<T>(fn: () => Promise<T>): Promise<T> {
-  const prev = lock;
-  let release: (() => void) | undefined;
-  lock = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await prev;
-  try {
-    return await fn();
-  } finally {
-    release?.();
-  }
-}
+const withLock = createAsyncLock();
 
 async function loadState(baseDir?: string): Promise<NodePairingStateFile> {
-  const { pendingPath, pairedPath } = resolvePaths(baseDir);
+  const { pendingPath, pairedPath } = resolvePairingPaths(baseDir, "nodes");
   const [pending, paired] = await Promise.all([
-    readJSON<Record<string, NodePairingPendingRequest>>(pendingPath),
-    readJSON<Record<string, NodePairingPairedNode>>(pairedPath),
+    readJsonFile<Record<string, NodePairingPendingRequest>>(pendingPath),
+    readJsonFile<Record<string, NodePairingPairedNode>>(pairedPath),
   ]);
   const state: NodePairingStateFile = {
     pendingById: pending ?? {},
     pairedByNodeId: paired ?? {},
   };
-  pruneExpiredPending(state.pendingById, Date.now());
+  pruneExpiredPending(state.pendingById, Date.now(), PENDING_TTL_MS);
   return state;
 }
 
 async function persistState(state: NodePairingStateFile, baseDir?: string) {
-  const { pendingPath, pairedPath } = resolvePaths(baseDir);
+  const { pendingPath, pairedPath } = resolvePairingPaths(baseDir, "nodes");
   await Promise.all([
-    writeJSONAtomic(pendingPath, state.pendingById),
-    writeJSONAtomic(pairedPath, state.pairedByNodeId),
+    writeJsonAtomic(pendingPath, state.pendingById),
+    writeJsonAtomic(pairedPath, state.pairedByNodeId),
   ]);
 }
 
@@ -144,13 +88,13 @@ function normalizeNodeId(nodeId: string) {
 }
 
 function newToken() {
-  return randomUUID().replaceAll("-", "");
+  return generatePairingToken();
 }
 
 export async function listNodePairing(baseDir?: string): Promise<NodePairingList> {
   const state = await loadState(baseDir);
-  const pending = Object.values(state.pendingById).sort((a, b) => b.ts - a.ts);
-  const paired = Object.values(state.pairedByNodeId).sort(
+  const pending = Object.values(state.pendingById).toSorted((a, b) => b.ts - a.ts);
+  const paired = Object.values(state.pairedByNodeId).toSorted(
     (a, b) => b.approvedAtMs - a.approvedAtMs,
   );
   return { pending, paired };
@@ -216,7 +160,9 @@ export async function approveNodePairing(
   return await withLock(async () => {
     const state = await loadState(baseDir);
     const pending = state.pendingById[requestId];
-    if (!pending) return null;
+    if (!pending) {
+      return null;
+    }
 
     const now = Date.now();
     const existing = state.pairedByNodeId[pending.nodeId];
@@ -252,7 +198,9 @@ export async function rejectNodePairing(
   return await withLock(async () => {
     const state = await loadState(baseDir);
     const pending = state.pendingById[requestId];
-    if (!pending) return null;
+    if (!pending) {
+      return null;
+    }
     delete state.pendingById[requestId];
     await persistState(state, baseDir);
     return { requestId, nodeId: pending.nodeId };
@@ -267,8 +215,10 @@ export async function verifyNodeToken(
   const state = await loadState(baseDir);
   const normalized = normalizeNodeId(nodeId);
   const node = state.pairedByNodeId[normalized];
-  if (!node) return { ok: false };
-  return node.token === token ? { ok: true, node } : { ok: false };
+  if (!node) {
+    return { ok: false };
+  }
+  return verifyPairingToken(token, node.token) ? { ok: true, node } : { ok: false };
 }
 
 export async function updatePairedNodeMetadata(
@@ -280,7 +230,9 @@ export async function updatePairedNodeMetadata(
     const state = await loadState(baseDir);
     const normalized = normalizeNodeId(nodeId);
     const existing = state.pairedByNodeId[normalized];
-    if (!existing) return;
+    if (!existing) {
+      return;
+    }
 
     const next: NodePairingPairedNode = {
       ...existing,
@@ -313,9 +265,13 @@ export async function renamePairedNode(
     const state = await loadState(baseDir);
     const normalized = normalizeNodeId(nodeId);
     const existing = state.pairedByNodeId[normalized];
-    if (!existing) return null;
+    if (!existing) {
+      return null;
+    }
     const trimmed = displayName.trim();
-    if (!trimmed) throw new Error("displayName required");
+    if (!trimmed) {
+      throw new Error("displayName required");
+    }
     const next: NodePairingPairedNode = { ...existing, displayName: trimmed };
     state.pairedByNodeId[normalized] = next;
     await persistState(state, baseDir);

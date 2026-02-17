@@ -8,15 +8,17 @@
  * API fields for reasoning/thinking.
  */
 export function isReasoningTagProvider(provider: string | undefined | null): boolean {
-  if (!provider) return false;
+  if (!provider) {
+    return false;
+  }
   const normalized = provider.trim().toLowerCase();
 
-  // Check for exact matches or known prefixes/substrings for reasoning providers
-  if (
-    normalized === "ollama" ||
-    normalized === "google-gemini-cli" ||
-    normalized === "google-generative-ai"
-  ) {
+  // Check for exact matches or known prefixes/substrings for reasoning providers.
+  // Note: Ollama is intentionally excluded - its OpenAI-compatible endpoint
+  // handles reasoning natively via the `reasoning` field in streaming chunks,
+  // so tag-based enforcement is unnecessary and causes all output to be
+  // discarded as "(no output)" (#2279).
+  if (normalized === "google-gemini-cli" || normalized === "google-generative-ai") {
     return true;
   }
 

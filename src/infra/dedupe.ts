@@ -1,3 +1,5 @@
+import { pruneMapToMaxSize } from "./map-size.js";
+
 export type DedupeCache = {
   check: (key: string | undefined | null, now?: number) => boolean;
   clear: () => void;
@@ -32,16 +34,14 @@ export function createDedupeCache(options: DedupeCacheOptions): DedupeCache {
       cache.clear();
       return;
     }
-    while (cache.size > maxSize) {
-      const oldestKey = cache.keys().next().value as string | undefined;
-      if (!oldestKey) break;
-      cache.delete(oldestKey);
-    }
+    pruneMapToMaxSize(cache, maxSize);
   };
 
   return {
     check: (key, now = Date.now()) => {
-      if (!key) return false;
+      if (!key) {
+        return false;
+      }
       const existing = cache.get(key);
       if (existing !== undefined && (ttlMs <= 0 || now - existing < ttlMs)) {
         touch(key, now);
