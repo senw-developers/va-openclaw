@@ -1,5 +1,6 @@
 services:
   openclaw-gateway:
+    container_name: openclaw-gateway
     image: ${OPENCLAW_IMAGE:-openclaw:local}
     environment:
       HOME: /home/node
@@ -18,9 +19,11 @@ services:
     restart: unless-stopped
     command: ['node', 'dist/index.js', 'gateway', '--bind', '${OPENCLAW_GATEWAY_BIND:-lan}', '--port', '18789']
     networks:
+      - openclaw-internal-network
       - openclaw-network
 
   openclaw-cli:
+    container_name: openclaw-cli
     image: ${OPENCLAW_IMAGE:-openclaw:local}
     environment:
       HOME: /home/node
@@ -38,8 +41,12 @@ services:
     init: true
     entrypoint: ['node', 'dist/index.js']
     networks:
+      - openclaw-internal-network
       - openclaw-network
 
 networks:
+  openclaw-internal-network:
+    driver: bridge
+
   openclaw-network:
     external: true
