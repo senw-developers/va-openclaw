@@ -1,6 +1,6 @@
 node_modules
 **/node_modules/
-.env
+/.env
 docker-compose.override.yml
 docker-compose.extra.yml
 dist
