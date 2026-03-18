@@ -115,11 +115,11 @@ export async function resolveGatewayRuntimeConfig(params: {
     process.env.OPENCLAW_SKIP_CANVAS_HOST !== "1" && params.cfg.canvasHost?.enabled !== false;
 
   const trustedProxies = params.cfg.gateway?.trustedProxies ?? [];
-  const controlUiAllowedOrigins = (params.cfg.gateway?.controlUi?.allowedOrigins ?? [])
-    .map((value) => value.trim())
-    .filter(Boolean);
-  const dangerouslyAllowHostHeaderOriginFallback =
-    params.cfg.gateway?.controlUi?.dangerouslyAllowHostHeaderOriginFallback === true;
+  // const controlUiAllowedOrigins = (params.cfg.gateway?.controlUi?.allowedOrigins ?? [])
+  //   .map((value) => value.trim())
+  //   .filter(Boolean);
+  // const dangerouslyAllowHostHeaderOriginFallback =
+  //   params.cfg.gateway?.controlUi?.dangerouslyAllowHostHeaderOriginFallback === true;
 
   assertGatewayAuthConfigured(resolvedAuth, params.cfg.gateway?.auth);
   if (tailscaleMode === "funnel" && authMode !== "password") {
@@ -135,16 +135,16 @@ export async function resolveGatewayRuntimeConfig(params: {
       `refusing to bind gateway to ${bindHost}:${params.port} without auth (set gateway.auth.token/password, or set OPENCLAW_GATEWAY_TOKEN/OPENCLAW_GATEWAY_PASSWORD)`,
     );
   }
-  if (
-    controlUiEnabled &&
-    !isLoopbackHost(bindHost) &&
-    controlUiAllowedOrigins.length === 0 &&
-    !dangerouslyAllowHostHeaderOriginFallback
-  ) {
-    throw new Error(
-      "non-loopback Control UI requires gateway.controlUi.allowedOrigins (set explicit origins), or set gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback=true to use Host-header origin fallback mode",
-    );
-  }
+  // if (
+  //   controlUiEnabled &&
+  //   !isLoopbackHost(bindHost) &&
+  //   controlUiAllowedOrigins.length === 0 &&
+  //   !dangerouslyAllowHostHeaderOriginFallback
+  // ) {
+  //   throw new Error(
+  //     "non-loopback Control UI requires gateway.controlUi.allowedOrigins (set explicit origins), or set gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback=true to use Host-header origin fallback mode",
+  //   );
+  // }
 
   if (authMode === "trusted-proxy") {
     if (trustedProxies.length === 0) {
