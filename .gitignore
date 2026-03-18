@@ -135,3 +135,11 @@ ui/src/ui/__screenshots__
 ui/src/ui/views/__screenshots__
 ui/.vitest-attachments
 docs/superpowers
+
+# Allow instance configurations to be committed
+!instances/
+!instances/*
+!instances/**/*
+!nabu_shared_configurations/
+!nabu_shared_configurations/*
+!nabu_shared_configurations/**/*
