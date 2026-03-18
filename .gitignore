@@ -143,3 +143,5 @@ docs/superpowers
 !nabu_shared_configurations/
 !nabu_shared_configurations/*
 !nabu_shared_configurations/**/*
+!nabu-shared-configurations/identity/IDENTITY.md
+!nabu-shared-configurations/identity/USER.md
