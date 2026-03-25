@@ -17,5 +17,11 @@
       "refresh": "rt_4PT0t-T0brRsjQBkuz0nti5MHtcOukronZSUle5Twtg.g4v6vT1LUsb9ylzOE9KQdI5XNi-UFSLWJiNAvEkwV8M",
       "expires": 1774879647694
     }
+  },
+  "usageStats": {
+    "openai-codex:default": {
+      "errorCount": 0,
+      "lastUsed": 1774470724956
+    }
   }
 }

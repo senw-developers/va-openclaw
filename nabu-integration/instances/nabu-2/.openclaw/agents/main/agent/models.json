@@ -17,7 +17,8 @@
             "cacheWrite": 3.75
           },
           "contextWindow": 200000,
-          "maxTokens": 64000
+          "maxTokens": 64000,
+          "api": "anthropic-messages"
         }
       ]
     },

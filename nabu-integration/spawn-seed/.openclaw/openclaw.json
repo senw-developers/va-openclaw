@@ -45,6 +45,17 @@
       }
     }
   },
+  "plugins": {
+    "entries": {
+      "nabu-email": {
+        "enabled": true,
+        "config": {
+          "apiToken": "",
+          "apiBaseUrl": "http://app:6000"
+        }
+      }
+    }
+  },
   "agents": {
     "defaults": {
       "model": {
@@ -60,7 +71,15 @@
       "sandbox": {
         "mode": "off"
       }
-    }
+    },
+    "list": [
+      {
+        "id": "main",
+        "tools": {
+          "allow": ["nabu_email_send", "nabu_email_fetch"]
+        }
+      }
+    ]
   },
   "tools": {
     "profile": "coding"

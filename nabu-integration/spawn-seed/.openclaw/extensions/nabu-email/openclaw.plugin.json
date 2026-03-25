@@ -1,0 +1,31 @@
+{
+  "id": "nabu-email",
+  "name": "NABU Email",
+  "description": "Send and fetch emails via the VA.Team backend API",
+  "skills": ["./skills"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["apiToken"],
+    "properties": {
+      "apiToken": {
+        "type": "string",
+        "description": "Per-organization skill token issued by the SMTP module"
+      },
+      "apiBaseUrl": {
+        "type": "string",
+        "description": "NestJS backend base URL — Docker-internal"
+      }
+    }
+  },
+  "uiHints": {
+    "apiToken": {
+      "label": "API Token",
+      "sensitive": true
+    },
+    "apiBaseUrl": {
+      "label": "API Base URL",
+      "placeholder": "http://app:6000"
+    }
+  }
+}

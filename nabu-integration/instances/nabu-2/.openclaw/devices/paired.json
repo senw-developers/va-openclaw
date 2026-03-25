@@ -1,0 +1,82 @@
+{
+  "af15e8d3970de35ef73cf93ac25582cbc7a19071be1824872a7b0fbd6b37ad1a": {
+    "deviceId": "af15e8d3970de35ef73cf93ac25582cbc7a19071be1824872a7b0fbd6b37ad1a",
+    "publicKey": "wY_3PnZeSE4yeAznSFqeAHaCMG_zXyqbISQPoQmroLA",
+    "platform": "linux",
+    "clientId": "cli",
+    "clientMode": "cli",
+    "role": "operator",
+    "roles": ["operator"],
+    "scopes": [
+      "operator.admin",
+      "operator.read",
+      "operator.write",
+      "operator.approvals",
+      "operator.pairing"
+    ],
+    "approvedScopes": [
+      "operator.admin",
+      "operator.read",
+      "operator.write",
+      "operator.approvals",
+      "operator.pairing"
+    ],
+    "tokens": {
+      "operator": {
+        "token": "cs9Feapl0EdzqedAhLXuBx-aoGyrq6rtSTX4F3HklN4",
+        "role": "operator",
+        "scopes": [
+          "operator.admin",
+          "operator.approvals",
+          "operator.pairing",
+          "operator.read",
+          "operator.write"
+        ],
+        "createdAtMs": 1774437298687
+      }
+    },
+    "createdAtMs": 1774437298687,
+    "approvedAtMs": 1774437298687
+  },
+  "881518a625efa0c33fbcf0a04b8c929a46bc2fb8479edcafe6a3c91ca8a18904": {
+    "deviceId": "881518a625efa0c33fbcf0a04b8c929a46bc2fb8479edcafe6a3c91ca8a18904",
+    "publicKey": "kDvXL-KOqBcpkE2nn0iQV-5ES1R68Y-U8cSbDcDjY6c",
+    "platform": "linux",
+    "clientId": "gateway-client",
+    "clientMode": "backend",
+    "role": "operator",
+    "roles": ["operator"],
+    "scopes": [
+      "operator.admin",
+      "operator.approvals",
+      "operator.pairing",
+      "operator.read",
+      "operator.write"
+    ],
+    "approvedScopes": [
+      "operator.admin",
+      "operator.approvals",
+      "operator.pairing",
+      "operator.read",
+      "operator.write"
+    ],
+    "remoteIp": "172.19.0.4",
+    "tokens": {
+      "operator": {
+        "token": "Wk21upEg4bKS72qZ1K_TgqgBQCnMnWTff2wT70Zd7vQ",
+        "role": "operator",
+        "scopes": [
+          "operator.admin",
+          "operator.approvals",
+          "operator.pairing",
+          "operator.read",
+          "operator.write"
+        ],
+        "createdAtMs": 1774437397807,
+        "lastUsedAtMs": 1774467036974
+      }
+    },
+    "createdAtMs": 1774437397807,
+    "approvedAtMs": 1774437397807
+  }
+}

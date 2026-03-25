@@ -137,4 +137,4 @@ ui/.vitest-attachments
 docs/superpowers
 
 # Allow instance configurations to be committed
-!nabu-integration/spawn-seed/**/*
+# nabu-integration/instances/
