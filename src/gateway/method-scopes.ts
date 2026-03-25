@@ -48,6 +48,9 @@ const METHOD_SCOPE_GROUPS: Record<OperatorScope, readonly string[]> = {
     "device.token.rotate",
     "device.token.revoke",
     "node.rename",
+    "dm.pair.list",
+    "dm.pair.approve",
+    "dm.pair.reject",
   ],
   [READ_SCOPE]: [
     "health",

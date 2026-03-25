@@ -137,11 +137,4 @@ ui/.vitest-attachments
 docs/superpowers
 
 # Allow instance configurations to be committed
-!instances/
-!instances/*
-!instances/**/*
-!nabu_shared_configurations/
-!nabu_shared_configurations/*
-!nabu_shared_configurations/**/*
-!nabu-shared-configurations/identity/IDENTITY.md
-!nabu-shared-configurations/identity/USER.md
+!nabu-integration/spawn-seed/**/*

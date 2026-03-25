@@ -103,6 +103,9 @@ const BASE_METHODS = [
   "chat.history",
   "chat.abort",
   "chat.send",
+  "dm.pair.list",
+  "dm.pair.approve",
+  "dm.pair.reject",
 ];
 
 export function listGatewayMethods(): string[] {

@@ -1,0 +1,30 @@
+{
+  "providers": {
+    "cloudflare-ai-gateway": {
+      "baseUrl": "https://gateway.ai.cloudflare.com/v1/28e2bfffc24a3bc753e2c461f8e8627f/openclaw/anthropic",
+      "api": "anthropic-messages",
+      "apiKey": "7_6p5HocCSe-hSujRpWzCoA-fzg9mscdacGKmuof",
+      "models": [
+        {
+          "id": "claude-sonnet-4-5",
+          "name": "Claude Sonnet 4.5",
+          "reasoning": true,
+          "input": ["text", "image"],
+          "cost": {
+            "input": 3,
+            "output": 15,
+            "cacheRead": 0.3,
+            "cacheWrite": 3.75
+          },
+          "contextWindow": 200000,
+          "maxTokens": 64000
+        }
+      ]
+    },
+    "openai-codex": {
+      "baseUrl": "https://chatgpt.com/backend-api",
+      "api": "openai-codex-responses",
+      "models": []
+    }
+  }
+}
