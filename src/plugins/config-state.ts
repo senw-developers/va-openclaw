@@ -33,6 +33,7 @@ export const BUNDLED_ENABLED_BY_DEFAULT = new Set<string>([
   "anthropic",
   "byteplus",
   "cloudflare-ai-gateway",
+  "deepseek",
   "device-pair",
   "github-copilot",
   "google",
@@ -71,7 +72,7 @@ const PLUGIN_ID_ALIASES: Readonly<Record<string, string>> = {
   "minimax-portal-auth": "minimax",
 };
 
-function normalizePluginId(id: string): string {
+export function normalizePluginId(id: string): string {
   const trimmed = id.trim();
   return PLUGIN_ID_ALIASES[trimmed] ?? trimmed;
 }
@@ -193,7 +194,7 @@ const hasExplicitMemorySlot = (plugins?: OpenClawConfig["plugins"]) =>
 const hasExplicitMemoryEntry = (plugins?: OpenClawConfig["plugins"]) =>
   Boolean(plugins?.entries && Object.prototype.hasOwnProperty.call(plugins.entries, "memory-core"));
 
-const hasExplicitPluginConfig = (plugins?: OpenClawConfig["plugins"]) => {
+export const hasExplicitPluginConfig = (plugins?: OpenClawConfig["plugins"]) => {
   if (!plugins) {
     return false;
   }
@@ -274,6 +275,7 @@ export function resolveEnableState(
   id: string,
   origin: PluginRecord["origin"],
   config: NormalizedPluginsConfig,
+  enabledByDefault?: boolean,
 ): { enabled: boolean; reason?: string } {
   if (!config.enabled) {
     return { enabled: false, reason: "plugins disabled" };
@@ -298,7 +300,7 @@ export function resolveEnableState(
   if (entry?.enabled === true) {
     return { enabled: true };
   }
-  if (origin === "bundled" && BUNDLED_ENABLED_BY_DEFAULT.has(id)) {
+  if (origin === "bundled" && (enabledByDefault ?? BUNDLED_ENABLED_BY_DEFAULT.has(id))) {
     return { enabled: true };
   }
   if (origin === "bundled") {
@@ -331,8 +333,9 @@ export function resolveEffectiveEnableState(params: {
   origin: PluginRecord["origin"];
   config: NormalizedPluginsConfig;
   rootConfig?: OpenClawConfig;
+  enabledByDefault?: boolean;
 }): { enabled: boolean; reason?: string } {
-  const base = resolveEnableState(params.id, params.origin, params.config);
+  const base = resolveEnableState(params.id, params.origin, params.config, params.enabledByDefault);
   if (
     !base.enabled &&
     base.reason === "bundled (disabled by default)" &&
