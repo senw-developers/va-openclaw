@@ -43,6 +43,15 @@ async function apiPost(
 // Plugin entry point
 // Docs: https://docs.openclaw.ai/plugins/building-plugins
 // ---------------------------------------------------------------------------
+
+function parseJsonSafe(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
 export default definePluginEntry({
   id: "nabu-email",
   name: "NABU Email",
@@ -58,6 +67,7 @@ export default definePluginEntry({
     api.registerTool(
       {
         name: "nabu_email_send",
+        label: "Send Email",
         description: "Send an email on behalf of the organization via the configured SMTP account.",
         parameters: Type.Object({
           to: Type.Union([
@@ -73,9 +83,10 @@ export default definePluginEntry({
         }),
         async execute(_callId, params) {
           // api.pluginConfig = plugins.entries.nabu-email.config (live snapshot)
-          const cfg = api.pluginConfig as NabuEmailConfig;
-          const result = await apiPost(cfg, "send", params);
-          return { content: [{ type: "text", text: result }] };
+          const cfg = api.pluginConfig as unknown as NabuEmailConfig;
+          const raw = await apiPost(cfg, "send", params);
+          const details = parseJsonSafe(raw);
+          return { content: [{ type: "text", text: raw }], details };
         },
       },
       { optional: true },
@@ -90,6 +101,7 @@ export default definePluginEntry({
     api.registerTool(
       {
         name: "nabu_email_fetch",
+        label: "Fetch Emails",
         description: "Fetch recent emails from the organization inbox.",
         parameters: Type.Object({
           mailbox: Type.Optional(Type.String({ default: "INBOX" })),
@@ -107,9 +119,10 @@ export default definePluginEntry({
           ),
         }),
         async execute(_callId, params) {
-          const cfg = api.pluginConfig as NabuEmailConfig;
-          const result = await apiPost(cfg, "fetch", params);
-          return { content: [{ type: "text", text: result }] };
+          const cfg = api.pluginConfig as unknown as NabuEmailConfig;
+          const raw = await apiPost(cfg, "fetch", params);
+          const details = parseJsonSafe(raw);
+          return { content: [{ type: "text", text: raw }], details };
         },
       },
       { optional: true },

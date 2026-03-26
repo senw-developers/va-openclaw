@@ -2116,6 +2116,50 @@ export const GENERATED_BUNDLED_PLUGIN_METADATA = [
     },
   },
   {
+    dirName: "nabu-email",
+    idHint: "nabu-email",
+    source: {
+      source: "./index.ts",
+      built: "index.js",
+    },
+    packageName: "@va-team/nabu-email",
+    packageVersion: "1.0.0",
+    packageManifest: {
+      extensions: ["./index.ts"],
+    },
+    manifest: {
+      id: "nabu-email",
+      configSchema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["apiToken"],
+        properties: {
+          apiToken: {
+            type: "string",
+            description: "Per-organization skill token issued by the SMTP module",
+          },
+          apiBaseUrl: {
+            type: "string",
+            description: "NestJS backend base URL — Docker-internal",
+          },
+        },
+      },
+      skills: ["./skills"],
+      name: "NABU Email",
+      description: "Send and fetch emails via the VA.Team backend API",
+      uiHints: {
+        apiToken: {
+          label: "API Token",
+          sensitive: true,
+        },
+        apiBaseUrl: {
+          label: "API Base URL",
+          placeholder: "http://app:6000",
+        },
+      },
+    },
+  },
+  {
     dirName: "nextcloud-talk",
     idHint: "nextcloud-talk",
     source: {

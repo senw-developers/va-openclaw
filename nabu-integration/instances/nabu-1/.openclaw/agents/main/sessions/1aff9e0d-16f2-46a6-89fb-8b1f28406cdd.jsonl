@@ -1,6 +1,0 @@
-{"type":"session","version":3,"id":"1aff9e0d-16f2-46a6-89fb-8b1f28406cdd","timestamp":"2026-03-25T19:18:04.993Z","cwd":"/home/node/.openclaw/workspace"}
-{"type":"model_change","id":"e63c853d","parentId":null,"timestamp":"2026-03-25T19:18:04.996Z","provider":"openai-codex","modelId":"gpt-5.4"}
-{"type":"thinking_level_change","id":"c6711e57","parentId":"e63c853d","timestamp":"2026-03-25T19:18:04.996Z","thinkingLevel":"low"}
-{"type":"custom","customType":"model-snapshot","data":{"timestamp":1774466285000,"provider":"openai-codex","modelApi":"openai-codex-responses","modelId":"gpt-5.4"},"id":"ce8b1fa3","parentId":"c6711e57","timestamp":"2026-03-25T19:18:05.001Z"}
-{"type":"message","id":"cd011039","parentId":"ce8b1fa3","timestamp":"2026-03-25T19:18:05.006Z","message":{"role":"user","content":[{"type":"text","text":"hello, who are you?"}],"timestamp":1774466285003}}
-{"type":"message","id":"23cc4b03","parentId":"cd011039","timestamp":"2026-03-25T19:18:13.154Z","message":{"role":"assistant","content":[],"api":"openai-codex-responses","provider":"openai-codex","model":"gpt-5.4","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"error","timestamp":1774466285005,"errorMessage":"Your authentication token has been invalidated. Please try signing in again."}}
