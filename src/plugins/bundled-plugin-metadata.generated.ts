@@ -2144,8 +2144,9 @@ export const GENERATED_BUNDLED_PLUGIN_METADATA = [
           },
         },
       },
+      enabledByDefault: true,
       skills: ["./skills"],
-      name: "NABU Email",
+      name: "@va-team/nabu-email",
       description: "Send and fetch emails via the VA.Team backend API",
       uiHints: {
         apiToken: {

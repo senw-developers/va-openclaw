@@ -136,7 +136,7 @@ ui/.vitest-attachments
 docs/superpowers
 
 # Allow instance configurations to be committed
-# nabu-integration/instances/
+nabu-integration/instances/
 
 # Deprecated changelog fragment workflow
 changelog/fragments/

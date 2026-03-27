@@ -14,6 +14,11 @@
       "cloudflare-ai-gateway:default": {
         "provider": "cloudflare-ai-gateway",
         "mode": "api_key"
+      },
+      "openai-codex:dev2@senw.io": {
+        "provider": "openai-codex",
+        "mode": "oauth",
+        "email": "dev2@senw.io"
       }
     }
   },
@@ -44,7 +49,7 @@
   "agents": {
     "defaults": {
       "model": {
-        "primary": "cloudflare-ai-gateway/claude-sonnet-4-5"
+        "primary": "openai-codex/gpt-5.4"
       },
       "models": {
         "cloudflare-ai-gateway/claude-sonnet-4-5": {
@@ -56,18 +61,17 @@
       "sandbox": {
         "mode": "off"
       }
-    },
-    "list": [
-      {
-        "id": "main",
-        "tools": {
-          "allow": ["nabu_email_send", "nabu_email_fetch"]
-        }
-      }
-    ]
+    }
   },
   "tools": {
-    "profile": "coding"
+    "profile": "coding",
+    "alsoAllow": ["nabu-email"],
+    "web": {
+      "search": {
+        "enabled": true,
+        "provider": "duckduckgo"
+      }
+    }
   },
   "commands": {
     "native": "auto",
@@ -110,19 +114,20 @@
         "reminders.add",
         "sms.send"
       ]
-    },
-    "plugins": {
-      "entries": {
-        "nabu-email": {
-          "enabled": true,
-          "config": {
-            "apiToken": "",
-            "apiBaseUrl": "http://app:6000"
-          }
-        },
-        "duckduckgo": {
-          "enabled": true
+    }
+  },
+  "plugins": {
+    "allow": ["nabu-email"],
+    "entries": {
+      "nabu-email": {
+        "enabled": true,
+        "config": {
+          "apiToken": "",
+          "apiBaseUrl": "http://app:6000"
         }
+      },
+      "duckduckgo": {
+        "enabled": true
       }
     }
   }

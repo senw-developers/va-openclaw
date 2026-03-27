@@ -1,8 +1,9 @@
+import * as http from "http";
 import { Type } from "@sinclair/typebox";
 import { definePluginEntry, type OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
 
 // ---------------------------------------------------------------------------
-// Plugin config shape — mirrors plugins.entries.nabu-email.config in openclaw.json
+// Plugin config shape — mirrors plugins.entries.nabu-email.config
 // ---------------------------------------------------------------------------
 interface NabuEmailConfig {
   apiToken: string;
@@ -10,10 +11,24 @@ interface NabuEmailConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Read plugin config from the live config file on every tool call.
+//
+// api.pluginConfig is captured at registration time (startup snapshot), so
+// it will NOT reflect changes made via config.patch after startup.
+// api.runtime.config.loadConfig() reads the current file from disk,
+// ensuring the token pushed by NestJS is always used without a restart.
+// ---------------------------------------------------------------------------
+function getLivePluginConfig(api: OpenClawPluginApi): NabuEmailConfig {
+  const cfg = api.runtime.config.loadConfig();
+  const pluginEntry = (cfg as any)?.plugins?.entries?.["nabu-email"]?.config;
+  return {
+    apiToken: pluginEntry?.apiToken ?? "",
+    apiBaseUrl: pluginEntry?.apiBaseUrl ?? "http://app:6000",
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Internal helper — POST to the NestJS SMTP API over the Docker network.
-// Reads pluginConfig at call time (not at register time) so that a
-// config.patch pushed from NestJS over WebSocket is reflected immediately
-// on the next tool call without a gateway restart.
 // ---------------------------------------------------------------------------
 async function apiPost(
   pluginConfig: NabuEmailConfig,
@@ -21,28 +36,41 @@ async function apiPost(
   body: unknown,
 ): Promise<string> {
   const baseUrl = pluginConfig.apiBaseUrl ?? "http://app:6000";
+  const url = new URL(`/api/v1/smtp/${path}`, baseUrl);
 
-  const res = await fetch(`${baseUrl}/api/v1/smtp/${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-skill-token": pluginConfig.apiToken,
-    },
-    body: JSON.stringify(body),
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body);
+    const req = http.request(
+      {
+        hostname: url.hostname,
+        port: Number(url.port) || 80,
+        path: url.pathname,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(payload),
+          "x-skill-token": pluginConfig.apiToken,
+        },
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          if (res.statusCode && res.statusCode >= 400) {
+            reject(new Error(`nabu-email /${path} failed (${res.statusCode}): ${data}`));
+          } else {
+            resolve(data);
+          }
+        });
+      },
+    );
+    req.on("error", (err) =>
+      reject(new Error(`nabu-email /${path} network error: ${err.message}`)),
+    );
+    req.write(payload);
+    req.end();
   });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    throw new Error(`nabu-email /${path} failed (${res.status}): ${text}`);
-  }
-
-  return res.text();
 }
-
-// ---------------------------------------------------------------------------
-// Plugin entry point
-// Docs: https://docs.openclaw.ai/plugins/building-plugins
-// ---------------------------------------------------------------------------
 
 function parseJsonSafe(raw: string): unknown {
   try {
@@ -52,9 +80,13 @@ function parseJsonSafe(raw: string): unknown {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Plugin entry point
+// Docs: https://docs.openclaw.ai/plugins/building-plugins
+// ---------------------------------------------------------------------------
 export default definePluginEntry({
   id: "nabu-email",
-  name: "NABU Email",
+  name: "@va-team/nabu-email",
   description: "Send and fetch emails via the VA.Team backend API",
 
   register(api: OpenClawPluginApi) {
@@ -62,7 +94,7 @@ export default definePluginEntry({
     // Tool: send email
     //
     // optional: true — side effects + requires credentials.
-    // Users opt in via: agents.list[].tools.allow: ["nabu_email_send"]
+    // Enable via: agents.list[main].tools.allow: ["nabu_email_send"]
     // -----------------------------------------------------------------------
     api.registerTool(
       {
@@ -82,8 +114,7 @@ export default definePluginEntry({
           replyTo: Type.Optional(Type.String({ description: "Reply-to address" })),
         }),
         async execute(_callId, params) {
-          // api.pluginConfig = plugins.entries.nabu-email.config (live snapshot)
-          const cfg = api.pluginConfig as unknown as NabuEmailConfig;
+          const cfg = getLivePluginConfig(api);
           const raw = await apiPost(cfg, "send", params);
           const details = parseJsonSafe(raw);
           return { content: [{ type: "text", text: raw }], details };
@@ -96,7 +127,7 @@ export default definePluginEntry({
     // Tool: fetch emails
     //
     // optional: true — requires credentials.
-    // Users opt in via: agents.list[].tools.allow: ["nabu_email_fetch"]
+    // Enable via: agents.list[main].tools.allow: ["nabu_email_fetch"]
     // -----------------------------------------------------------------------
     api.registerTool(
       {
@@ -119,7 +150,7 @@ export default definePluginEntry({
           ),
         }),
         async execute(_callId, params) {
-          const cfg = api.pluginConfig as unknown as NabuEmailConfig;
+          const cfg = getLivePluginConfig(api);
           const raw = await apiPost(cfg, "fetch", params);
           const details = parseJsonSafe(raw);
           return { content: [{ type: "text", text: raw }], details };
@@ -129,13 +160,11 @@ export default definePluginEntry({
     );
 
     // -----------------------------------------------------------------------
-    // Gateway RPC method — called by NestJS after pushing the token via
-    // config.patch over the existing operator WebSocket connection.
-    // Acts as a typed confirmation endpoint; actual persistence is done
-    // by config.patch (which writes into plugins.entries.nabu-email.config).
+    // Gateway RPC — NestJS calls this after config.patch to confirm receipt.
+    // The actual token is read live from disk via getLivePluginConfig(),
+    // so no restart is needed after a token update.
     //
-    // NestJS call:
-    //   connection.rpc("nabu.email.configure", {})
+    // NestJS call: connection.rpc("nabu.email.configure", {})
     // -----------------------------------------------------------------------
     api.registerGatewayMethod("nabu.email.configure", ({ respond }) => {
       respond(true, { ok: true, plugin: api.id });

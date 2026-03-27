@@ -1,8 +1,9 @@
 {
   "id": "nabu-email",
-  "name": "NABU Email",
+  "name": "@va-team/nabu-email",
   "description": "Send and fetch emails via the VA.Team backend API",
   "skills": ["./skills"],
+  "enabledByDefault": true,
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

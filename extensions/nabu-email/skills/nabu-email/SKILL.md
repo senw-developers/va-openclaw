@@ -8,7 +8,7 @@ metadata:
   }
 ---
 
-# NABU Email
+# @va-team/nabu-email
 
 Handles organizational email via the VA.Team backend.
 Credentials are managed server-side — no SMTP or IMAP configuration is needed here.
