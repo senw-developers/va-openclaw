@@ -2321,6 +2321,36 @@ export async function runEmbeddedAttempt(
         activeSession.agent.streamFn = cacheTrace.wrapStreamFn(activeSession.agent.streamFn);
       }
 
+      // Inject Cloudflare AI Gateway tracking headers so logs can be
+      // correlated with OpenClaw's responseId/runId.
+      if (params.runId) {
+        const innerRunIdFn = activeSession.agent.streamFn;
+        activeSession.agent.streamFn = (model, context, options) => {
+          const existingHeaders = options?.headers ?? {};
+
+          // Parse existing cf-aig-metadata (set by provider config) and append responseId
+          const modelHeaders = (model as { headers?: Record<string, string> }).headers ?? {};
+          const existingMeta =
+            existingHeaders["cf-aig-metadata"] ?? modelHeaders["cf-aig-metadata"];
+          let meta: Record<string, unknown> = {};
+          try {
+            meta = existingMeta ? JSON.parse(existingMeta) : {};
+          } catch {
+            /* ignore */
+          }
+          meta.responseId = params.runId;
+
+          const nextOptions = {
+            ...options,
+            headers: {
+              ...existingHeaders,
+              "cf-aig-metadata": JSON.stringify(meta),
+            },
+          };
+          return innerRunIdFn(model, context, nextOptions);
+        };
+      }
+
       // Anthropic Claude endpoints can reject replayed `thinking` blocks
       // (e.g. thinkingSignature:"reasoning_text") on any follow-up provider
       // call, including tool continuations. Wrap the stream function so every

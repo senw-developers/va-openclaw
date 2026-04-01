@@ -27,6 +27,10 @@
       "cloudflare-ai-gateway": {
         "baseUrl": "https://gateway.ai.cloudflare.com/v1/28e2bfffc24a3bc753e2c461f8e8627f/openclaw/anthropic",
         "api": "anthropic-messages",
+        "headers": {
+          "cf-aig-metadata": "{\"organizationId\":\"${OPENCLAW_ORGANIZATION_ID}\"}",
+          "cf-aig-collect-log": "true"
+        },
         "models": [
           {
             "id": "claude-sonnet-4-5",
@@ -40,7 +44,10 @@
               "cacheWrite": 3.75
             },
             "contextWindow": 200000,
-            "maxTokens": 64000
+            "maxTokens": 64000,
+            "compat": {
+              "supportsUsageInStreaming": true
+            }
           }
         ]
       }
