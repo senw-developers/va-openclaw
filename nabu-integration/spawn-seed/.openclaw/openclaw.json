@@ -56,7 +56,7 @@
   "agents": {
     "defaults": {
       "model": {
-        "primary": "openai-codex/gpt-5.4"
+        "primary": "cloudflare-ai-gateway/claude-sonnet-4-5"
       },
       "models": {
         "cloudflare-ai-gateway/claude-sonnet-4-5": {
