@@ -2323,7 +2323,10 @@ export async function runEmbeddedAttempt(
 
       // Inject Cloudflare AI Gateway tracking headers so logs can be
       // correlated with OpenClaw's responseId/runId.
-      if (params.runId) {
+      const isCloudflareAiGatewayProvider =
+        normalizeProviderId(params.model.provider ?? "") === "cloudflare-ai-gateway";
+
+      if (params.runId && isCloudflareAiGatewayProvider) {
         const innerRunIdFn = activeSession.agent.streamFn;
         activeSession.agent.streamFn = (model, context, options) => {
           const existingHeaders = options?.headers ?? {};

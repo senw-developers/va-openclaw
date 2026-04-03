@@ -55,6 +55,9 @@
   },
   "agents": {
     "defaults": {
+      "heartbeat": {
+        "every": "0m"
+      },
       "model": {
         "primary": "cloudflare-ai-gateway/claude-sonnet-4-5"
       },
@@ -88,6 +91,93 @@
   },
   "session": {
     "dmScope": "per-channel-peer"
+  },
+  "channels": {
+    "telegram": {
+      "enabled": false,
+      "botToken": "",
+      "dmPolicy": "pairing",
+      "groups": {
+        "*": {
+          "requireMention": true
+        }
+      },
+      "groupPolicy": "allowlist",
+      "streaming": "partial"
+    },
+    "whatsapp": {
+      "enabled": false,
+      "dmPolicy": "pairing",
+      "selfChatMode": true,
+      "allowFrom": [],
+      "groupAllowFrom": [],
+      "groupPolicy": "allowlist",
+      "debounceMs": 0,
+      "mediaMaxMb": 50
+    },
+    "discord": {
+      "enabled": false,
+      "groupPolicy": "allowlist",
+      "token": ""
+    },
+    "slack": {
+      "enabled": false,
+      "botToken": "",
+      "appToken": "",
+      "dmPolicy": "pairing",
+      "allowFrom": [],
+      "dm": { "enabled": true, "groupEnabled": false, "groupChannels": [] },
+      "channels": {},
+      "historyLimit": 50,
+      "allowBots": false,
+      "reactionNotifications": "own",
+      "reactionAllowlist": [],
+      "replyToMode": "off",
+      "thread": {
+        "historyScope": "thread",
+        "inheritParent": false
+      },
+      "actions": {
+        "reactions": true,
+        "messages": true,
+        "pins": true,
+        "memberInfo": true,
+        "emojiList": true
+      },
+      "slashCommand": {
+        "enabled": true,
+        "name": "nabu",
+        "sessionPrefix": "slack:slash",
+        "ephemeral": true
+      },
+      "typingReaction": "hourglass_flowing_sand",
+      "textChunkLimit": 4000,
+      "chunkMode": "length",
+      "streaming": "partial",
+      "nativeStreaming": true,
+      "mediaMaxMb": 20
+    },
+    "imessage": {
+      "enabled": false,
+      "cliPath": "imsg",
+      "dbPath": "~/Library/Messages/chat.db",
+      "remoteHost": "",
+      "dmPolicy": "pairing",
+      "allowFrom": [],
+      "historyLimit": 50,
+      "includeAttachments": false,
+      "attachmentRoots": [],
+      "remoteAttachmentRoots": [],
+      "mediaMaxMb": 16,
+      "service": "auto"
+    },
+    "msteam": {
+      "enabled": false,
+      "appId": "",
+      "appPassword": "",
+      "tenantId": "",
+      "webhook": { "port": 3978, "path": "/api/messages" }
+    }
   },
   "gateway": {
     "port": 18789,
@@ -124,7 +214,7 @@
     }
   },
   "plugins": {
-    "allow": ["nabu-email"],
+    "allow": ["nabu-email", "duckduckgo", "whatsapp", "slack", "msteams", "imessage", "discord"],
     "entries": {
       "nabu-email": {
         "enabled": true,
