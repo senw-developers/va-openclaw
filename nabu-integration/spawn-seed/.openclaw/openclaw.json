@@ -214,7 +214,16 @@
     }
   },
   "plugins": {
-    "allow": ["nabu-email", "duckduckgo", "whatsapp", "slack", "msteams", "imessage", "discord"],
+    "allow": [
+      "nabu-email",
+      "duckduckgo",
+      "whatsapp",
+      "slack",
+      "msteams",
+      "imessage",
+      "discord",
+      "telegram"
+    ],
     "entries": {
       "nabu-email": {
         "enabled": true,
