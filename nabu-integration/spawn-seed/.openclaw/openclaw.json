@@ -1,4 +1,5 @@
 {
+  "nabuEnabled": true,
   "meta": {
     "lastTouchedVersion": "2026.3.24",
     "lastTouchedAt": "2026-03-26T14:08:36.555Z"
@@ -198,6 +199,9 @@
       "endpoints": {
         "chatCompletions": {
           "enabled": true
+        },
+        "responses": {
+          "enabled": true
         }
       }
     },
@@ -216,6 +220,8 @@
   "plugins": {
     "allow": [
       "nabu-email",
+      "nabu-usage",
+      "nabu-gateway",
       "duckduckgo",
       "whatsapp",
       "slack",

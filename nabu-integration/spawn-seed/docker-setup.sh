@@ -436,7 +436,8 @@ upsert_env "$ENV_FILE" \
   DOCKER_GID \
   OPENCLAW_INSTALL_DOCKER_CLI \
   OPENCLAW_ALLOW_INSECURE_PRIVATE_WS \
-  OPENCLAW_TZ
+  OPENCLAW_TZ \
+  NABU_ENVIRONMENT
 
 # ---------------------------------------------------------------------------
 # Image: use existing local image, build from source, or pull from registry.

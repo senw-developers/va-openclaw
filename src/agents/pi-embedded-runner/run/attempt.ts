@@ -1153,6 +1153,7 @@ export async function runEmbeddedAttempt(
             /* ignore */
           }
           meta.responseId = params.runId;
+          meta.environment = process.env.NABU_ENVIRONMENT ?? "error";
 
           const nextOptions = {
             ...options,
