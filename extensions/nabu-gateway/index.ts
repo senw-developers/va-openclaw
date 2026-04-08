@@ -71,8 +71,8 @@ function getLivePluginConfig(api: OpenClawPluginApi): NabuGatewayConfig {
  */
 function isNabuEnabled(api: OpenClawPluginApi): boolean {
   const cfg = api.runtime.config.loadConfig();
-  const value = (cfg as any)?.nabuEnabled;
-  return value !== false;
+  const pluginEntry = (cfg as any)?.plugins?.entries?.["nabu-gateway"]?.config;
+  return pluginEntry?.enabled !== false;
 }
 
 // ---------------------------------------------------------------------------
