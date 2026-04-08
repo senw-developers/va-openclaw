@@ -5,7 +5,7 @@ export function makeBaseReq(
   method: string,
   opts: { headers?: Record<string, string>; url?: string } = {},
 ): IncomingMessage & { destroyed: boolean } {
-  const req = new EventEmitter() as IncomingMessage & { destroyed: boolean };
+  const req = new EventEmitter();
   req.method = method;
   req.headers = opts.headers ?? {};
   req.url = opts.url ?? "/webhook/synology";
@@ -55,6 +55,16 @@ export function makeRes(): ServerResponse & { _status: number; _body: string } {
       res._body = body ?? "";
     },
   } as unknown as ServerResponse & { _status: number; _body: string };
+  Object.defineProperty(res, "statusCode", {
+    configurable: true,
+    enumerable: true,
+    get() {
+      return res._status;
+    },
+    set(value: number) {
+      res._status = value;
+    },
+  });
   return res;
 }
 
