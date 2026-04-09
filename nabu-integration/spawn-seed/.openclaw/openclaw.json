@@ -220,7 +220,6 @@
   "plugins": {
     "allow": [
       "nabu-email",
-      "nabu-usage",
       "nabu-gateway",
       "duckduckgo",
       "whatsapp",
@@ -231,6 +230,13 @@
       "telegram"
     ],
     "entries": {
+      "nabu-gateway": {
+        "enabled": true,
+        "config": {
+          "enabled": true,
+          "apiBaseUrl": "http://nabu-1-app:6000"
+        }
+      },
       "nabu-email": {
         "enabled": true,
         "config": {

@@ -152,8 +152,10 @@ export default definePluginEntry({
     api.on("before_agent_reply", (_event: unknown, _ctx: AgentHookContext) => {
       if (!isNabuEnabled(api)) {
         return {
-          reply:
-            "⚠️ Your organization's AI credits have been exhausted. Please top up or wait for your billing cycle to reset.",
+          handled: true,
+          reply: {
+            text: "⚠️ Your organization's AI credits have been exhausted. Please top up or wait for your billing cycle to reset.",
+          },
         };
       }
     });
