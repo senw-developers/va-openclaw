@@ -1,0 +1,64 @@
+{
+  "id": "nabu-model-router",
+  "name": "Nabu Model Router",
+  "description": "Haiku-orchestrated router that classifies each prompt and dispatches to Haiku, Sonnet, or Opus.",
+  "enabledByDefault": true,
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "providerId": {
+        "type": "string",
+        "default": "cloudflare-ai-gateway"
+      },
+      "classifier": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "model": { "type": "string", "default": "claude-haiku-4-5" },
+          "timeoutMs": { "type": "integer", "minimum": 200, "default": 5000 },
+          "maxTokens": { "type": "integer", "minimum": 16, "default": 64 },
+          "apiKeyEnvVar": { "type": "string", "default": "CLOUDFLARE_AI_GATEWAY_API_KEY" }
+        }
+      },
+      "tiers": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "simple": { "type": "string", "default": "cloudflare-ai-gateway/claude-haiku-4-5" },
+          "medium": { "type": "string", "default": "cloudflare-ai-gateway/claude-sonnet-4-5" },
+          "hard": { "type": "string", "default": "cloudflare-ai-gateway/claude-opus-4-6" }
+        }
+      },
+      "escalateOnLowConfidence": { "type": "boolean", "default": true }
+    }
+  },
+  "uiHints": {
+    "providerId": {
+      "label": "Provider id",
+      "help": "openclaw provider id whose baseUrl and headers the classifier reuses (default: cloudflare-ai-gateway)"
+    },
+    "classifier.model": {
+      "label": "Classifier model",
+      "help": "Model used to classify request complexity. Should be a fast, cheap tier (default: claude-haiku-4-5)"
+    },
+    "classifier.timeoutMs": {
+      "label": "Classifier timeout (ms)",
+      "help": "Hard timeout for the classifier call. On timeout the router falls back to the configured default model."
+    },
+    "classifier.maxTokens": {
+      "label": "Classifier max output tokens"
+    },
+    "classifier.apiKeyEnvVar": {
+      "label": "API key env var",
+      "help": "Env var that holds the provider API key (default: CLOUDFLARE_AI_GATEWAY_API_KEY)"
+    },
+    "tiers.simple": { "label": "Model ref for simple requests (provider/model)" },
+    "tiers.medium": { "label": "Model ref for medium requests (provider/model)" },
+    "tiers.hard": { "label": "Model ref for hard requests (provider/model)" },
+    "escalateOnLowConfidence": {
+      "label": "Escalate on low confidence",
+      "help": "When the classifier reports low confidence, bump up one tier (simple\u2192medium, medium\u2192hard)."
+    }
+  }
+}
