@@ -262,6 +262,7 @@
       "nabu-email",
       "nabu-gateway",
       "nabu-model-router",
+      "nabu-1password",
       "duckduckgo",
       "whatsapp",
       "slack",
@@ -275,14 +276,14 @@
         "enabled": true,
         "config": {
           "enabled": true,
-          "apiBaseUrl": "http://nabu-1-app:6000"
+          "apiBaseUrl": "http://nabu-1-app:6001"
         }
       },
       "nabu-email": {
         "enabled": true,
         "config": {
           "apiToken": "",
-          "apiBaseUrl": "http://app:6000"
+          "apiBaseUrl": "http://app:6001"
         }
       },
       "nabu-model-router": {
@@ -302,8 +303,22 @@
           "escalateOnLowConfidence": true
         }
       },
+      "nabu-1password": {
+        "enabled": false,
+        "config": {
+          "apiToken": "",
+          "apiBaseUrl": "http://app:6001"
+        }
+      },
       "duckduckgo": {
         "enabled": true
+      }
+    }
+  },
+  "skills": {
+    "entries": {
+      "1password": {
+        "enabled": false
       }
     }
   }

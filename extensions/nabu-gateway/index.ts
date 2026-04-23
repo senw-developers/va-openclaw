@@ -61,7 +61,7 @@ function getLivePluginConfig(api: OpenClawPluginApi): NabuGatewayConfig {
   const cfg = api.runtime.config.loadConfig();
   const pluginEntry = (cfg as any)?.plugins?.entries?.["nabu-gateway"]?.config;
   return {
-    apiBaseUrl: pluginEntry?.apiBaseUrl ?? "http://app:6000",
+    apiBaseUrl: pluginEntry?.apiBaseUrl ?? "http://app:6001",
   };
 }
 

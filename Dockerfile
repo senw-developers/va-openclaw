@@ -247,6 +247,48 @@ RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,shar
         docker-ce-cli docker-compose-plugin; \
     fi
 
+# 1Password CLI (signed apt repo, multi-arch).
+# Baked into every Nabu tenant's gateway image so the nabu-1password plugin
+# can transparently shell out to `op` with the tenant's injected token.
+# Mirrors the Docker CLI install above for GPG-fingerprint verification.
+#
+# Note: the 1Password apt repo only serves the current latest version —
+# pinning an older or future version via `=VERSION` will fail with
+# "Version X for 1password-cli was not found". The `op --version` call
+# at the end of this block records the version that actually got installed
+# into the build log for reproducibility tracking.
+#
+# Update OPENCLAW_OP_GPG_FINGERPRINT when 1Password rotates release keys.
+ARG OPENCLAW_OP_GPG_FINGERPRINT="3FEF9748469ADBE15DA7CA80AC2D62742012EA22"
+RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=openclaw-bookworm-apt-lists,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      ca-certificates curl gnupg && \
+    install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://downloads.1password.com/linux/keys/1password.asc -o /tmp/op.gpg.asc && \
+    expected_fingerprint="$(printf '%s' "$OPENCLAW_OP_GPG_FINGERPRINT" | tr '[:lower:]' '[:upper:]' | tr -d '[:space:]')" && \
+    actual_fingerprint="$(gpg --batch --show-keys --with-colons /tmp/op.gpg.asc | awk -F: '$1 == "fpr" { print toupper($10); exit }')" && \
+    if [ -z "$actual_fingerprint" ] || [ "$actual_fingerprint" != "$expected_fingerprint" ]; then \
+      echo "ERROR: 1Password apt key fingerprint mismatch (expected $expected_fingerprint, got ${actual_fingerprint:-<empty>})" >&2; \
+      exit 1; \
+    fi && \
+    gpg --dearmor -o /etc/apt/keyrings/1password.gpg /tmp/op.gpg.asc && \
+    rm -f /tmp/op.gpg.asc && \
+    chmod a+r /etc/apt/keyrings/1password.gpg && \
+    printf 'deb [arch=%s signed-by=/etc/apt/keyrings/1password.gpg] https://downloads.1password.com/linux/debian/%s stable main\n' \
+      "$(dpkg --print-architecture)" "$(dpkg --print-architecture)" \
+      > /etc/apt/sources.list.d/1password.list && \
+    install -m 0755 -d /etc/debsig/policies/AC2D62742012EA22/ /usr/share/debsig/keyrings/AC2D62742012EA22 && \
+    curl -fsSL https://downloads.1password.com/linux/debian/debsig/1password.pol \
+      > /etc/debsig/policies/AC2D62742012EA22/1password.pol && \
+    curl -fsSL https://downloads.1password.com/linux/keys/1password.asc \
+      | gpg --dearmor -o /usr/share/debsig/keyrings/AC2D62742012EA22/debsig.gpg && \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      1password-cli && \
+    op --version
+
 # Expose the CLI binary without requiring npm global writes as non-root.
 RUN ln -sf /app/openclaw.mjs /usr/local/bin/openclaw \
  && chmod 755 /app/openclaw.mjs

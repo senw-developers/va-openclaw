@@ -23,7 +23,7 @@ function getLivePluginConfig(api: OpenClawPluginApi): NabuEmailConfig {
   const pluginEntry = (cfg as any)?.plugins?.entries?.["nabu-email"]?.config;
   return {
     apiToken: pluginEntry?.apiToken ?? "",
-    apiBaseUrl: pluginEntry?.apiBaseUrl ?? "http://app:6000",
+    apiBaseUrl: pluginEntry?.apiBaseUrl ?? "http://app:6001",
   };
 }
 
@@ -35,7 +35,7 @@ async function apiPost(
   path: string,
   body: unknown,
 ): Promise<string> {
-  const baseUrl = pluginConfig.apiBaseUrl ?? "http://app:6000";
+  const baseUrl = pluginConfig.apiBaseUrl ?? "http://app:6001";
   const url = new URL(`/api/v1/smtp/${path}`, baseUrl);
 
   return new Promise((resolve, reject) => {

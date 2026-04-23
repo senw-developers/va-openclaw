@@ -25,7 +25,7 @@
     },
     "apiBaseUrl": {
       "label": "API Base URL",
-      "placeholder": "http://app:6000"
+      "placeholder": "http://app:6001"
     }
   }
 }
