@@ -1,0 +1,46 @@
+{
+  "id": "nabu-google-workspace",
+  "name": "@va-team/nabu-google-workspace",
+  "description": "Per-tenant Google Drive + Calendar access. Vends short-lived OAuth access tokens fetched from the Nabu backend and exposes a single passthrough tool the agent uses against Google REST APIs.",
+  "skills": ["./skills"],
+  "enabledByDefault": false,
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "apiToken": {
+        "type": "string",
+        "description": "Per-organization skill bearer issued by the GoogleWorkspace module on Nabu backend"
+      },
+      "apiBaseUrl": {
+        "type": "string",
+        "description": "NestJS backend base URL — Docker-internal"
+      },
+      "tokenVersion": {
+        "type": "number",
+        "description": "Monotonic counter bumped by NestJS on rotate / re-consent / disconnect; the plugin invalidates its access-token cache when this changes."
+      },
+      "refreshIntervalMs": {
+        "type": "number",
+        "description": "How often to re-validate the apiToken health with NestJS. Default 6h."
+      }
+    }
+  },
+  "uiHints": {
+    "apiToken": {
+      "label": "API Token",
+      "sensitive": true
+    },
+    "apiBaseUrl": {
+      "label": "API Base URL",
+      "placeholder": "http://app:6001"
+    },
+    "tokenVersion": {
+      "label": "Token version"
+    },
+    "refreshIntervalMs": {
+      "label": "Refresh interval (ms)",
+      "placeholder": "21600000"
+    }
+  }
+}

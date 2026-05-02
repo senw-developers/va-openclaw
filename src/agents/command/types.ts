@@ -66,6 +66,13 @@ export type AgentCommandOpts = {
   /** Message channel context (webchat|voicewake|whatsapp|...). */
   messageChannel?: string;
   channel?: string; // delivery channel (whatsapp|telegram|...)
+  /**
+   * Trusted end-user identity from the calling surface — propagates to
+   * `OpenClawPluginToolContext.requesterSenderId`. Channel adapters set
+   * this from inbound message `from`; HTTP/RPC ingress callers should
+   * pass the authenticated user's stable id here.
+   */
+  senderId?: string;
   /** Account ID for multi-account channel routing (e.g., WhatsApp account). */
   accountId?: string;
   /** Context for embedded run routing (channel/account/thread). */

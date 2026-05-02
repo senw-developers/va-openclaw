@@ -116,7 +116,7 @@
   },
   "tools": {
     "profile": "coding",
-    "alsoAllow": ["nabu-email"],
+    "alsoAllow": ["nabu-email", "nabu-google-workspace"],
     "web": {
       "search": {
         "enabled": true,
@@ -263,6 +263,7 @@
       "nabu-gateway",
       "nabu-model-router",
       "nabu-1password",
+      "nabu-google-workspace",
       "duckduckgo",
       "whatsapp",
       "slack",
@@ -276,7 +277,7 @@
         "enabled": true,
         "config": {
           "enabled": true,
-          "apiBaseUrl": "http://nabu-1-app:6001"
+          "apiBaseUrl": "http://app:6001"
         }
       },
       "nabu-email": {
@@ -310,6 +311,14 @@
           "apiBaseUrl": "http://app:6001"
         }
       },
+      "nabu-google-workspace": {
+        "enabled": false,
+        "config": {
+          "apiToken": "",
+          "apiBaseUrl": "http://app:6001",
+          "tokenVersion": 0
+        }
+      },
       "duckduckgo": {
         "enabled": true
       }
@@ -318,6 +327,9 @@
   "skills": {
     "entries": {
       "1password": {
+        "enabled": false
+      },
+      "gog": {
         "enabled": false
       }
     }

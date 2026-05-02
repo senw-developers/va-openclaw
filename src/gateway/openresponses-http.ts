@@ -406,6 +406,12 @@ async function runResponsesAgentCommand(params: {
   runId: string;
   messageChannel: string;
   senderIsOwner: boolean;
+  /**
+   * Trusted end-user identity from the OpenAI-standard `user` body field.
+   * Lands on `OpenClawPluginToolContext.requesterSenderId` so per-user
+   * plugins (e.g. nabu-google-workspace) can resolve the right credentials.
+   */
+  senderId?: string;
   deps: ReturnType<typeof createDefaultDeps>;
   abortSignal?: AbortSignal;
 }) {
@@ -421,6 +427,7 @@ async function runResponsesAgentCommand(params: {
       runId: params.runId,
       deliver: false,
       messageChannel: params.messageChannel,
+      senderId: params.senderId,
       bestEffortDeliver: false,
       senderIsOwner: params.senderIsOwner,
       allowModelOverride: true,
@@ -697,6 +704,7 @@ export async function handleOpenResponsesHttpRequest(
         runId: responseId,
         messageChannel,
         senderIsOwner,
+        senderId: user?.trim() || undefined,
         deps,
         abortSignal: abortController.signal,
       });
@@ -974,6 +982,7 @@ export async function handleOpenResponsesHttpRequest(
         runId: responseId,
         messageChannel,
         senderIsOwner,
+        senderId: user?.trim() || undefined,
         deps,
         abortSignal: abortController.signal,
       });

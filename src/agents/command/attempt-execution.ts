@@ -443,6 +443,7 @@ export function runAgentAttempt(params: {
     trigger: "user",
     messageChannel: params.messageChannel,
     agentAccountId: params.runContext.accountId,
+    senderId: params.opts.senderId,
     messageTo: params.opts.replyTo ?? params.opts.to,
     messageThreadId: params.opts.threadId,
     groupId: params.runContext.groupId,

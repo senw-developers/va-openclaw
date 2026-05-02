@@ -116,6 +116,12 @@ function buildAgentCommandInput(params: {
   runId: string;
   messageChannel: string;
   senderIsOwner: boolean;
+  /**
+   * Trusted end-user identity from the OpenAI-standard `user` body field.
+   * Lands on `OpenClawPluginToolContext.requesterSenderId` so per-user
+   * plugins can resolve the right credentials.
+   */
+  senderId?: string;
   abortSignal?: AbortSignal;
 }) {
   return {
@@ -127,6 +133,7 @@ function buildAgentCommandInput(params: {
     runId: params.runId,
     deliver: false as const,
     messageChannel: params.messageChannel,
+    senderId: params.senderId,
     bestEffortDeliver: false as const,
     senderIsOwner: params.senderIsOwner,
     allowModelOverride: true as const,
@@ -514,6 +521,7 @@ export async function handleOpenAiHttpRequest(
     messageChannel,
     abortSignal: abortController.signal,
     senderIsOwner,
+    senderId: user?.trim() || undefined,
   });
 
   if (!stream) {
