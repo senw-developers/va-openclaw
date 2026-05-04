@@ -1,17 +1,6 @@
 /** Default NestJS backend base URL inside the tenant's Docker network. */
 export const DEFAULT_API_BASE_URL = "http://app:6001";
 
-/**
- * Allowlist of acceptable apiBaseUrl values (after a config.patch).
- * Any other URL is rejected — defense against a poisoned config redirecting
- * the access-token callback (with its `x-skill-token` + `x-organization-id`
- * headers) to an attacker-controlled host.
- */
-export const ALLOWED_API_BASE_URL_PATTERNS: readonly RegExp[] = [
-  /^http:\/\/app:\d{2,5}$/,
-  /^http:\/\/nabu-[a-z0-9-]+-app:\d{2,5}$/,
-];
-
 /** Default health-check / re-validate interval — 6 hours. */
 export const DEFAULT_REFRESH_MS = 6 * 60 * 60 * 1000;
 
