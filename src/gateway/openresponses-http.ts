@@ -54,6 +54,7 @@ import {
   type StreamingEvent,
   type Usage,
 } from "./open-responses.schema.js";
+import { appendInlineMediaToText } from "./openresponses-media.js";
 import { buildAgentPrompt } from "./openresponses-prompt.js";
 import { createAssistantOutputItem, createFunctionCallOutputItem } from "./openresponses-shape.js";
 
@@ -713,7 +714,11 @@ export async function handleOpenResponsesHttpRequest(
         return true;
       }
 
-      const payloads = (result as { payloads?: Array<{ text?: string }> } | null)?.payloads;
+      const payloads = (
+        result as {
+          payloads?: Array<{ text?: string; mediaUrl?: string; mediaUrls?: string[] }>;
+        } | null
+      )?.payloads;
       const usage = extractUsageFromResult(result);
       const meta = (result as { meta?: unknown } | null)?.meta;
       const { stopReason, pendingToolCalls } = resolveStopReasonAndPendingToolCalls(meta);
@@ -723,13 +728,16 @@ export async function handleOpenResponsesHttpRequest(
         const functionCall = pendingToolCalls[0];
         const functionCallItemId = `call_${randomUUID()}`;
 
-        const assistantText =
+        const baseAssistantText =
           Array.isArray(payloads) && payloads.length > 0
             ? payloads
                 .map((p) => (typeof p.text === "string" ? p.text : ""))
                 .filter(Boolean)
                 .join("\n\n")
             : "";
+        // Inline tool-emitted MEDIA: paths/URLs as data-URI markdown so file
+        // bytes reach the browser without leaking internal paths.
+        const assistantText = await appendInlineMediaToText(baseAssistantText, payloads);
 
         const output: OutputItem[] = [];
         if (assistantText) {
@@ -763,13 +771,14 @@ export async function handleOpenResponsesHttpRequest(
         return true;
       }
 
-      const content =
+      const baseContent =
         Array.isArray(payloads) && payloads.length > 0
           ? payloads
               .map((p) => (typeof p.text === "string" ? p.text : ""))
               .filter(Boolean)
               .join("\n\n")
           : "No response from OpenClaw.";
+      const content = await appendInlineMediaToText(baseContent, payloads);
 
       const response = createResponseResource({
         id: responseId,
@@ -821,8 +830,13 @@ export async function handleOpenResponsesHttpRequest(
   let stopWatchingDisconnect = () => {};
   let finalUsage: Usage | undefined;
   let finalizeRequested: { status: ResponseResource["status"]; text: string } | null = null;
+  // Captured from `result.payloads` once `runResponsesAgentCommand` resolves,
+  // so the lifecycle:end handler can append data-URI media to the final text.
+  let finalizeMediaPayloads:
+    | ReadonlyArray<{ text?: string; mediaUrl?: string; mediaUrls?: string[] }>
+    | undefined;
 
-  const maybeFinalize = () => {
+  const maybeFinalize = async () => {
     if (closed) {
       return;
     }
@@ -838,12 +852,35 @@ export async function handleOpenResponsesHttpRequest(
     stopWatchingDisconnect();
     unsubscribe();
 
+    // Inline tool-emitted MEDIA: paths/URLs as data-URI markdown so generated
+    // file bytes reach the client without leaking internal paths. Done at
+    // finalize time because per-delta events do not carry mediaUrls.
+    const finalText = await appendInlineMediaToText(
+      finalizeRequested.text,
+      finalizeMediaPayloads,
+    );
+
+    if (finalText !== finalizeRequested.text) {
+      // Append-only delta keeps streaming clients consistent with the
+      // accumulated text they received so far.
+      const appended = finalText.slice(finalizeRequested.text.length);
+      if (appended) {
+        writeSseEvent(res, {
+          type: "response.output_text.delta",
+          item_id: outputItemId,
+          output_index: 0,
+          content_index: 0,
+          delta: appended,
+        });
+      }
+    }
+
     writeSseEvent(res, {
       type: "response.output_text.done",
       item_id: outputItemId,
       output_index: 0,
       content_index: 0,
-      text: finalizeRequested.text,
+      text: finalText,
     });
 
     writeSseEvent(res, {
@@ -851,12 +888,12 @@ export async function handleOpenResponsesHttpRequest(
       item_id: outputItemId,
       output_index: 0,
       content_index: 0,
-      part: { type: "output_text", text: finalizeRequested.text },
+      part: { type: "output_text", text: finalText },
     });
 
     const completedItem = createAssistantOutputItem({
       id: outputItemId,
-      text: finalizeRequested.text,
+      text: finalText,
       phase: finalizeRequested.status === "completed" ? "final_answer" : "commentary",
       status: "completed",
     });
@@ -886,7 +923,7 @@ export async function handleOpenResponsesHttpRequest(
       return;
     }
     finalizeRequested = { status, text };
-    maybeFinalize();
+    void maybeFinalize();
   };
 
   // Send initial events
@@ -991,7 +1028,13 @@ export async function handleOpenResponsesHttpRequest(
 
       // Check for pending client tool calls BEFORE maybeFinalize() because the
       // lifecycle:end event may already have requested finalization.
-      const resultAny = result as { payloads?: Array<{ text?: string }>; meta?: unknown };
+      const resultAny = result as {
+        payloads?: Array<{ text?: string; mediaUrl?: string; mediaUrls?: string[] }>;
+        meta?: unknown;
+      };
+      // Capture for the lifecycle:end → maybeFinalize handler so it can append
+      // data-URI media to the streamed final text.
+      finalizeMediaPayloads = Array.isArray(resultAny.payloads) ? resultAny.payloads : undefined;
       const meta = resultAny.meta;
       const { stopReason, pendingToolCalls } = resolveStopReasonAndPendingToolCalls(meta);
 
@@ -1003,7 +1046,7 @@ export async function handleOpenResponsesHttpRequest(
       ) {
         const functionCall = pendingToolCalls[0];
         const usage = finalUsage ?? createEmptyUsage();
-        const finalText =
+        const baseText =
           accumulatedText ||
           (Array.isArray(resultAny.payloads)
             ? resultAny.payloads
@@ -1011,6 +1054,19 @@ export async function handleOpenResponsesHttpRequest(
                 .filter(Boolean)
                 .join("\n\n")
             : "");
+        const finalText = await appendInlineMediaToText(baseText, resultAny.payloads);
+        if (finalText !== baseText) {
+          const appended = finalText.slice(baseText.length);
+          if (appended) {
+            writeSseEvent(res, {
+              type: "response.output_text.delta",
+              item_id: outputItemId,
+              output_index: 0,
+              content_index: 0,
+              delta: appended,
+            });
+          }
+        }
 
         writeSseEvent(res, {
           type: "response.output_text.done",
@@ -1081,7 +1137,7 @@ export async function handleOpenResponsesHttpRequest(
         return;
       }
 
-      maybeFinalize();
+      void maybeFinalize();
 
       if (closed) {
         return;

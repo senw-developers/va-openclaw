@@ -17,6 +17,11 @@
       "refresh": "rt_PC-7vhKXwBfeiTVHUr8hNobeoUikl6yiBcAdbnCXBIc.EBv94qS825lrYR8gil358vbXvi1M1Ta8wLYojdWMuAA",
       "expires": 1775421877708,
       "email": "dev2@senw.io"
+    },
+    "minimax:global": {
+      "type": "api_key",
+      "provider": "minimax",
+      "key": "sk-api-U5r-mgfZbkVrqfIwwXrfrYv7EyElw9f5rS__HnnTd46Maktr92cMfg0690-z1ZDHX8M2B7GcJKdx5GYAtRV4GmL_pHlW0VWXPHKFV-Hi2ogks7vW-uRYCXc"
     }
   }
 }
