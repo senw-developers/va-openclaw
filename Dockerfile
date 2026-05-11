@@ -289,6 +289,32 @@ RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,shar
       1password-cli && \
     op --version
 
+# Chromium browser (apt, multi-arch).
+# Baked into every Nabu tenant's gateway image so the openclaw browser plugin
+# can launch Chrome via CDP without per-tenant runtime install or
+# coordinating the OPENCLAW_INSTALL_BROWSER=1 build-arg across instances.
+#
+# Lands at /usr/bin/chromium, which is auto-detected by the launcher's
+# findChromeExecutableLinux() in
+# extensions/browser/src/browser/chrome.executables.ts. No browser.executablePath
+# override is required.
+#
+# Companion fonts mirror Dockerfile.sandbox-browser so headless rendering
+# produces readable Latin + CJK + emoji glyphs (without these, Chromium
+# renders most text as tofu boxes in screenshots/PDF export).
+#
+# Bookworm's apt chromium is the real binary (unlike Ubuntu hosts, where
+# apt chromium is a snap stub — see docs/tools/browser-linux-troubleshooting.md).
+RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,id=openclaw-bookworm-apt-lists,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      chromium \
+      fonts-liberation \
+      fonts-noto-cjk \
+      fonts-noto-color-emoji && \
+    chromium --version
+
 # Expose the CLI binary without requiring npm global writes as non-root.
 RUN ln -sf /app/openclaw.mjs /usr/local/bin/openclaw \
  && chmod 755 /app/openclaw.mjs

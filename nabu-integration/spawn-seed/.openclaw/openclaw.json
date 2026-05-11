@@ -137,7 +137,7 @@
         "every": "0m"
       },
       "model": {
-        "primary": "cloudflare-ai-gateway/claude-sonnet-4-5"
+        "primary": "openai-codex/gpt-5.4"
       },
       "imageGenerationModel": {
         "primary": "minimax/image-01"
@@ -291,6 +291,11 @@
         "enabled": true,
         "config": {
           "webSearch": {
+            "apiKey": {
+              "source": "env",
+              "provider": "default",
+              "id": "MINIMAX_API_KEY"
+            },
             "region": "global"
           }
         }

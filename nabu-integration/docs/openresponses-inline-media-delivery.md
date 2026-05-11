@@ -1,7 +1,17 @@
 # OpenResponses Inline Media Delivery
 
-**Status:** shipped — local-only change, no NestJS or infra coupling
-**Date:** 2026-05-08
+> **⚠️ REVERTED on 2026-05-11.** This approach did not work in practice
+> (1 MB cap killed video/large images; transcripts bloated; no persistent
+> URL across history reloads). The rollback procedure in §6 was applied:
+> `src/gateway/openresponses-media.ts` deleted, all 4 call sites in
+> `src/gateway/openresponses-http.ts` restored to pre-hack state.
+> The follow-on design — a dedicated NestJS Files API modeled on
+> Anthropic's Files API — is briefed in
+> [nabu-files-api-research-prompt.md](./nabu-files-api-research-prompt.md).
+> This document is kept for historical context only.
+
+**Status:** ~~shipped~~ **reverted 2026-05-11** — see banner above
+**Date:** 2026-05-08 (shipped) → 2026-05-11 (reverted)
 **Scope:** `src/gateway/openresponses-http.ts` + new `src/gateway/openresponses-media.ts`
 **Net diff:** +138 LOC (new file) + ~75 LOC modifications across 4 call sites in 1 file
 **Owner:** openclaw repo
