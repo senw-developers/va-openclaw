@@ -233,6 +233,14 @@
       "types": "./dist/plugin-sdk/media-generation-runtime.d.ts",
       "default": "./dist/plugin-sdk/media-generation-runtime.js"
     },
+    "./plugin-sdk/media-uploader": {
+      "types": "./dist/plugin-sdk/media-uploader.d.ts",
+      "default": "./dist/plugin-sdk/media-uploader.js"
+    },
+    "./plugin-sdk/media-resolver": {
+      "types": "./dist/plugin-sdk/media-resolver.d.ts",
+      "default": "./dist/plugin-sdk/media-resolver.js"
+    },
     "./plugin-sdk/conversation-binding-runtime": {
       "types": "./dist/plugin-sdk/conversation-binding-runtime.d.ts",
       "default": "./dist/plugin-sdk/conversation-binding-runtime.js"

@@ -6,9 +6,16 @@
  * @see https://www.open-responses.com/
  */
 
+import { Buffer } from "node:buffer";
 import { createHash, randomUUID } from "node:crypto";
+import * as fs from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import * as path from "node:path";
+import { SessionManager } from "@mariozechner/pi-coding-agent";
+import { extensionForMime } from "../media/mime.js";
+import { getMediaUploader, type MediaUploadResult } from "../plugin-sdk/media-uploader.js";
 import type { ImageContent } from "../agents/command/types.js";
+import { resolveSessionFilePath } from "../config/sessions/paths.js";
 import type { ClientToolDefinition } from "../agents/pi-embedded-runner/run/params.js";
 import { createDefaultDeps } from "../cli/deps.js";
 import { agentCommandFromIngress } from "../commands/agent.js";
@@ -34,7 +41,14 @@ import { wrapExternalContent } from "../security/external-content.js";
 import { resolveAssistantStreamDeltaText } from "./agent-event-assistant-text.js";
 import type { AuthRateLimiter } from "./auth-rate-limit.js";
 import type { ResolvedGatewayAuth } from "./auth.js";
+import {
+  MARKDOWN_IMAGE_RE,
+  USER_ATTACHMENT_CUSTOM_TYPE,
+  gatherFileRefsForMessages,
+  stripMarkdownImages,
+} from "./chat-file-refs.js";
 import { sendJson, setSseHeaders, watchClientDisconnect, writeDone } from "./http-common.js";
+import { loadSessionEntry, readSessionMessages } from "./session-utils.js";
 import { handleGatewayPostJsonEndpoint } from "./http-endpoint-helpers.js";
 import {
   getBearerToken,
@@ -232,6 +246,31 @@ function writeSseEvent(res: ServerResponse, event: StreamingEvent) {
   res.write(`data: ${JSON.stringify(event)}\n\n`);
 }
 
+// Local-path entries are rewritten upstream by the media-upload pi extension;
+// anything still local-path here has no uploader registered, so we drop it
+// (the FE can't fetch a local path).
+function joinPayloadsWithMedia(payloads: ReadonlyArray<unknown> | undefined): string {
+  if (!Array.isArray(payloads) || payloads.length === 0) return "";
+  const textParts: string[] = [];
+  const mediaUrls = new Set<string>();
+  for (const p of payloads) {
+    if (p && typeof p === "object") {
+      const text = (p as { text?: unknown }).text;
+      if (typeof text === "string" && text.length > 0) textParts.push(text);
+      const urls = (p as { mediaUrls?: unknown }).mediaUrls;
+      if (Array.isArray(urls)) {
+        for (const url of urls) {
+          if (typeof url === "string" && /^https?:\/\//i.test(url)) mediaUrls.add(url);
+        }
+      }
+    }
+  }
+  const baseText = textParts.join("\n\n");
+  if (mediaUrls.size === 0) return baseText;
+  const imageLines = Array.from(mediaUrls).map((url) => `![](${url})`);
+  return baseText ? `${baseText}\n\n${imageLines.join("\n\n")}` : imageLines.join("\n\n");
+}
+
 type ResolvedResponsesLimits = {
   maxBodyBytes: number;
   maxUrlParts: number;
@@ -382,6 +421,7 @@ function createResponseResource(params: {
   output: OutputItem[];
   usage?: Usage;
   error?: { code: string; message: string };
+  fileRefs?: unknown[];
 }): ResponseResource {
   return {
     id: params.id,
@@ -392,7 +432,130 @@ function createResponseResource(params: {
     output: params.output,
     usage: params.usage ?? createEmptyUsage(),
     error: params.error,
-  };
+    ...(params.fileRefs && params.fileRefs.length > 0 ? { fileRefs: params.fileRefs } : {}),
+  } as ResponseResource;
+}
+
+// Holds back any unclosed `![...` until close-paren arrives, then drops the
+// whole pattern. Keeps the streaming SSE channel from painting a hallucinated
+// URL the FE would have to undo when fileRefs[] lands.
+class MarkdownImageDeltaStripper {
+  private held = "";
+
+  push(delta: string): string {
+    this.held += delta;
+    this.held = this.held.replace(MARKDOWN_IMAGE_RE, "");
+    const open = this.held.lastIndexOf("![");
+    if (open === -1) {
+      const safe = this.held;
+      this.held = "";
+      return safe;
+    }
+    const safe = this.held.substring(0, open);
+    this.held = this.held.substring(open);
+    return safe;
+  }
+
+  flush(): string {
+    const tail = this.held.replace(MARKDOWN_IMAGE_RE, "");
+    this.held = "";
+    return tail;
+  }
+}
+
+// Scopes fileRefs to THIS turn only: the slice from the most-recent user
+// message onward (user + tool results + assistant). `turnInboundFileIds` are
+// the user-uploads we minted for this turn's input bound to the user message
+// that started it. Without scoping, response.completed would surface every
+// file ever seen in the session, which the FE renders as duplicates against
+// the chat-history snapshot.
+async function resolveTurnFileRefs(
+  sessionKey: string,
+  turnInboundFileIds: ReadonlyArray<number>,
+): Promise<unknown[]> {
+  try {
+    const { entry, storePath } = loadSessionEntry(sessionKey);
+    if (!entry?.sessionId) return [];
+    const messages = readSessionMessages(entry.sessionId, storePath, entry.sessionFile);
+
+    let turnStart = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if ((messages[i] as { role?: unknown }).role === "user") {
+        turnStart = i;
+        break;
+      }
+    }
+    const turnMessages = turnStart >= 0 ? messages.slice(turnStart) : [];
+
+    const turnUserAttachments = new Map<string, number[]>();
+    if (turnStart >= 0 && turnInboundFileIds.length > 0) {
+      const userId = (messages[turnStart] as { __openclaw?: { id?: unknown } }).__openclaw?.id;
+      if (typeof userId === "string") {
+        turnUserAttachments.set(userId, [...turnInboundFileIds]);
+      }
+    }
+
+    if (turnMessages.length === 0 && turnUserAttachments.size === 0) return [];
+    return await gatherFileRefsForMessages(turnMessages, {
+      requestId: `openresponses-http:${sessionKey}`,
+      userAttachments: turnUserAttachments,
+    });
+  } catch {
+    return [];
+  }
+}
+
+async function uploadInboundImage(
+  image: ImageContent,
+  responseId: string,
+  index: number,
+): Promise<MediaUploadResult | null> {
+  const uploader = getMediaUploader();
+  if (!uploader) return null;
+  try {
+    const bytes = Buffer.from(image.data, "base64");
+    if (bytes.length === 0) return null;
+    const ext = extensionForMime(image.mimeType)?.replace(/^\./, "") ?? "bin";
+    const filename = `user-upload-${responseId}-${index}.${ext}`;
+    return await uploader({
+      bytes,
+      filename,
+      mimeHint: image.mimeType,
+      responseId,
+      mediaIndex: index,
+      source: "openresponses-http:user-upload",
+    });
+  } catch (err) {
+    logWarn(`openresponses: input_image upload failed: ${(err as Error).message ?? String(err)}`);
+    return null;
+  }
+}
+
+function appendUserAttachmentEntryToSession(
+  sessionKey: string,
+  fileIds: number[],
+  responseId: string,
+): void {
+  if (fileIds.length === 0) return;
+  try {
+    const { entry, storePath } = loadSessionEntry(sessionKey);
+    if (!entry?.sessionId) return;
+    const sessionsDir = storePath ? path.dirname(storePath) : undefined;
+    const filePath = resolveSessionFilePath(
+      entry.sessionId,
+      entry.sessionFile ? { sessionFile: entry.sessionFile } : undefined,
+      sessionsDir ? { sessionsDir } : undefined,
+    );
+    if (!filePath || !fs.existsSync(filePath)) return;
+    const sm = SessionManager.open(filePath);
+    sm.appendCustomEntry(USER_ATTACHMENT_CUSTOM_TYPE, {
+      fileIds,
+      source: "openresponses-http",
+      responseId,
+    });
+  } catch (err) {
+    logWarn(`openresponses: failed to append user-attachment entry: ${(err as Error).message ?? String(err)}`);
+  }
 }
 
 async function runResponsesAgentCommand(params: {
@@ -499,9 +662,14 @@ export async function handleOpenResponsesHttpRequest(
     return true;
   }
 
+  // Generated before input extraction so inbound uploads can use it as the
+  // Files API Idempotency-Key.
+  const responseId = `resp_${randomUUID()}`;
+
   // Extract images + files from input (Phase 2)
   let images: ImageContent[] = [];
   let fileContexts: string[] = [];
+  const inboundUploadedFileIds: number[] = [];
   let urlParts = 0;
   const markUrlPart = () => {
     urlParts += 1;
@@ -545,6 +713,8 @@ export async function handleOpenResponsesHttpRequest(
                     };
               const image = await extractImageContentFromSource(imageSource, limits.images);
               images.push(image);
+              const uploaded = await uploadInboundImage(image, responseId, images.length - 1);
+              if (uploaded) inboundUploadedFileIds.push(uploaded.fileId);
               continue;
             }
 
@@ -679,7 +849,6 @@ export async function handleOpenResponsesHttpRequest(
     return true;
   }
 
-  const responseId = `resp_${randomUUID()}`;
   const rememberResponseSession = () =>
     storeResponseSession(responseId, sessionKey, responseSessionScope);
   const outputItemId = `msg_${randomUUID()}`;
@@ -713,6 +882,10 @@ export async function handleOpenResponsesHttpRequest(
         return true;
       }
 
+      // Persist after the agent writes its user message line; the custom
+      // entry must follow the user message for enrichment to attribute it.
+      appendUserAttachmentEntryToSession(sessionKey, inboundUploadedFileIds, responseId);
+
       const payloads = (result as { payloads?: Array<{ text?: string }> } | null)?.payloads;
       const usage = extractUsageFromResult(result);
       const meta = (result as { meta?: unknown } | null)?.meta;
@@ -723,13 +896,7 @@ export async function handleOpenResponsesHttpRequest(
         const functionCall = pendingToolCalls[0];
         const functionCallItemId = `call_${randomUUID()}`;
 
-        const assistantText =
-          Array.isArray(payloads) && payloads.length > 0
-            ? payloads
-                .map((p) => (typeof p.text === "string" ? p.text : ""))
-                .filter(Boolean)
-                .join("\n\n")
-            : "";
+        const assistantText = joinPayloadsWithMedia(payloads);
 
         const output: OutputItem[] = [];
         if (assistantText) {
@@ -763,13 +930,10 @@ export async function handleOpenResponsesHttpRequest(
         return true;
       }
 
-      const content =
-        Array.isArray(payloads) && payloads.length > 0
-          ? payloads
-              .map((p) => (typeof p.text === "string" ? p.text : ""))
-              .filter(Boolean)
-              .join("\n\n")
-          : "No response from OpenClaw.";
+      const content = joinPayloadsWithMedia(payloads) || "No response from OpenClaw.";
+
+      const turnFileRefs = await resolveTurnFileRefs(sessionKey, inboundUploadedFileIds);
+      const finalText = turnFileRefs.length > 0 ? stripMarkdownImages(content) : content;
 
       const response = createResponseResource({
         id: responseId,
@@ -778,12 +942,13 @@ export async function handleOpenResponsesHttpRequest(
         output: [
           createAssistantOutputItem({
             id: outputItemId,
-            text: content,
+            text: finalText,
             phase: "final_answer",
             status: "completed",
           }),
         ],
         usage,
+        fileRefs: turnFileRefs,
       });
 
       rememberResponseSession();
@@ -821,8 +986,9 @@ export async function handleOpenResponsesHttpRequest(
   let stopWatchingDisconnect = () => {};
   let finalUsage: Usage | undefined;
   let finalizeRequested: { status: ResponseResource["status"]; text: string } | null = null;
+  const deltaStripper = new MarkdownImageDeltaStripper();
 
-  const maybeFinalize = () => {
+  const maybeFinalize = async () => {
     if (closed) {
       return;
     }
@@ -838,12 +1004,18 @@ export async function handleOpenResponsesHttpRequest(
     stopWatchingDisconnect();
     unsubscribe();
 
+    const turnFileRefs = await resolveTurnFileRefs(sessionKey, inboundUploadedFileIds);
+    const finalText =
+      turnFileRefs.length > 0
+        ? stripMarkdownImages(finalizeRequested.text)
+        : finalizeRequested.text;
+
     writeSseEvent(res, {
       type: "response.output_text.done",
       item_id: outputItemId,
       output_index: 0,
       content_index: 0,
-      text: finalizeRequested.text,
+      text: finalText,
     });
 
     writeSseEvent(res, {
@@ -851,12 +1023,12 @@ export async function handleOpenResponsesHttpRequest(
       item_id: outputItemId,
       output_index: 0,
       content_index: 0,
-      part: { type: "output_text", text: finalizeRequested.text },
+      part: { type: "output_text", text: finalText },
     });
 
     const completedItem = createAssistantOutputItem({
       id: outputItemId,
-      text: finalizeRequested.text,
+      text: finalText,
       phase: finalizeRequested.status === "completed" ? "final_answer" : "commentary",
       status: "completed",
     });
@@ -873,6 +1045,7 @@ export async function handleOpenResponsesHttpRequest(
       status: finalizeRequested.status,
       output: [completedItem],
       usage,
+      fileRefs: turnFileRefs,
     });
 
     rememberResponseSession();
@@ -886,7 +1059,7 @@ export async function handleOpenResponsesHttpRequest(
       return;
     }
     finalizeRequested = { status, text };
-    maybeFinalize();
+    void maybeFinalize();
   };
 
   // Send initial events
@@ -944,13 +1117,16 @@ export async function handleOpenResponsesHttpRequest(
       sawAssistantDelta = true;
       accumulatedText += content;
 
-      writeSseEvent(res, {
-        type: "response.output_text.delta",
-        item_id: outputItemId,
-        output_index: 0,
-        content_index: 0,
-        delta: content,
-      });
+      const safeDelta = deltaStripper.push(content);
+      if (safeDelta.length > 0) {
+        writeSseEvent(res, {
+          type: "response.output_text.delta",
+          item_id: outputItemId,
+          output_index: 0,
+          content_index: 0,
+          delta: safeDelta,
+        });
+      }
       return;
     }
 
@@ -989,6 +1165,8 @@ export async function handleOpenResponsesHttpRequest(
 
       finalUsage = extractUsageFromResult(result);
 
+      appendUserAttachmentEntryToSession(sessionKey, inboundUploadedFileIds, responseId);
+
       // Check for pending client tool calls BEFORE maybeFinalize() because the
       // lifecycle:end event may already have requested finalization.
       const resultAny = result as { payloads?: Array<{ text?: string }>; meta?: unknown };
@@ -1003,14 +1181,7 @@ export async function handleOpenResponsesHttpRequest(
       ) {
         const functionCall = pendingToolCalls[0];
         const usage = finalUsage ?? createEmptyUsage();
-        const finalText =
-          accumulatedText ||
-          (Array.isArray(resultAny.payloads)
-            ? resultAny.payloads
-                .map((p) => (typeof p.text === "string" ? p.text : ""))
-                .filter(Boolean)
-                .join("\n\n")
-            : "");
+        const finalText = accumulatedText || joinPayloadsWithMedia(resultAny.payloads);
 
         writeSseEvent(res, {
           type: "response.output_text.done",
@@ -1081,7 +1252,7 @@ export async function handleOpenResponsesHttpRequest(
         return;
       }
 
-      maybeFinalize();
+      await maybeFinalize();
 
       if (closed) {
         return;
@@ -1090,13 +1261,7 @@ export async function handleOpenResponsesHttpRequest(
       // Fallback: if no streaming deltas were received, send the full response as text
       if (!sawAssistantDelta) {
         const payloads = resultAny.payloads;
-        const content =
-          Array.isArray(payloads) && payloads.length > 0
-            ? payloads
-                .map((p) => (typeof p.text === "string" ? p.text : ""))
-                .filter(Boolean)
-                .join("\n\n")
-            : "No response from OpenClaw.";
+        const content = joinPayloadsWithMedia(payloads) || "No response from OpenClaw.";
 
         accumulatedText = content;
         sawAssistantDelta = true;

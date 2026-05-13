@@ -229,6 +229,7 @@
       "nabu-gateway",
       "nabu-model-router",
       "nabu-1password",
+      "nabu-files",
       "nabu-google-workspace",
       "browser",
       "minimax",
@@ -277,6 +278,17 @@
         "config": {
           "apiToken": "",
           "apiBaseUrl": "http://app:6001"
+        }
+      },
+      "nabu-files": {
+        "enabled": false,
+        "config": {
+          "apiBaseUrl": "http://app:6001",
+          "apiToken": {
+            "source": "env",
+            "provider": "default",
+            "id": "NABU_FILES_SKILL_TOKEN"
+          }
         }
       },
       "nabu-google-workspace": {

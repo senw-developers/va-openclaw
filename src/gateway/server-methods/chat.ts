@@ -52,6 +52,10 @@ import {
   type OffloadedRef,
   parseMessageWithAttachments,
 } from "../chat-attachments.js";
+import {
+  enrichMessagesWithFileRefs,
+  readUserAttachmentFileIdsByMessage,
+} from "../chat-file-refs.js";
 import { stripEnvelopeFromMessage, stripEnvelopeFromMessages } from "../chat-sanitize.js";
 import { augmentChatHistoryWithCliSessionImports } from "../cli-session-history.js";
 import { ADMIN_SCOPE } from "../method-scopes.js";
@@ -1270,7 +1274,21 @@ export const chatHandlers: GatewayRequestHandlers = {
     const requested = typeof limit === "number" ? limit : defaultLimit;
     const max = Math.min(hardMax, requested);
     const sliced = rawMessages.length > max ? rawMessages.slice(-max) : rawMessages;
-    const sanitized = stripEnvelopeFromMessages(sliced);
+    // Enrich before sanitization, which strips details.nabuFileIds.
+    const userAttachments = sessionId && storePath
+      ? readUserAttachmentFileIdsByMessage(
+          resolveSessionFilePath(
+            sessionId,
+            entry?.sessionFile ? { sessionFile: entry.sessionFile } : undefined,
+            storePath ? { sessionsDir: path.dirname(storePath) } : undefined,
+          ),
+        )
+      : undefined;
+    const enriched = await enrichMessagesWithFileRefs(sliced, {
+      requestId: `chat.history:${sessionKey}`,
+      ...(userAttachments ? { userAttachments } : {}),
+    });
+    const sanitized = stripEnvelopeFromMessages(enriched);
     const normalized = sanitizeChatHistoryMessages(sanitized, effectiveMaxChars);
     const maxHistoryBytes = getMaxChatHistoryMessagesBytes();
     const perMessageHardCap = Math.min(CHAT_HISTORY_MAX_SINGLE_MESSAGE_BYTES, maxHistoryBytes);

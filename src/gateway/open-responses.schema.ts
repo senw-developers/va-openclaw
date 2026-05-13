@@ -289,6 +289,8 @@ export const ResponseResourceSchema = z.object({
       message: z.string(),
     })
     .optional(),
+  // FileRef[] from openclaw/plugin-sdk/media-resolver.
+  fileRefs: z.array(z.unknown()).optional(),
 });
 
 export type ResponseResource = z.infer<typeof ResponseResourceSchema>;

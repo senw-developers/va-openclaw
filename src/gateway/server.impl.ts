@@ -84,6 +84,7 @@ import { runSetupWizard } from "../wizard/setup.js";
 import { createAuthRateLimiter, type AuthRateLimiter } from "./auth-rate-limit.js";
 import { resolveGatewayAuth } from "./auth.js";
 import { startChannelHealthMonitor } from "./channel-health-monitor.js";
+import { enrichMessageWithFileRefs } from "./chat-file-refs.js";
 import { resolveGatewayReloadSettings, startGatewayConfigReloader } from "./config-reload.js";
 import type { ControlUiRootState } from "./control-ui.js";
 import {
@@ -1142,18 +1143,24 @@ export async function startGatewayServer(
             ...(typeof update.messageId === "string" ? { id: update.messageId } : {}),
             ...(typeof messageSeq === "number" ? { seq: messageSeq } : {}),
           });
-          broadcastToConnIds(
-            "session.message",
-            {
-              sessionKey,
-              message,
-              ...(typeof update.messageId === "string" ? { messageId: update.messageId } : {}),
-              ...(typeof messageSeq === "number" ? { messageSeq } : {}),
-              ...sessionSnapshot,
-            },
-            connIds,
-            { dropIfSlow: true },
-          );
+          // Async so a slow resolver does not block other subscribers.
+          void (async () => {
+            const enriched = await enrichMessageWithFileRefs(message, {
+              requestId: `session.message:${sessionKey}`,
+            });
+            broadcastToConnIds(
+              "session.message",
+              {
+                sessionKey,
+                message: enriched,
+                ...(typeof update.messageId === "string" ? { messageId: update.messageId } : {}),
+                ...(typeof messageSeq === "number" ? { messageSeq } : {}),
+                ...sessionSnapshot,
+              },
+              connIds,
+              { dropIfSlow: true },
+            );
+          })();
 
           const sessionEventConnIds = sessionEventSubscribers.getAll();
           if (sessionEventConnIds.size > 0) {

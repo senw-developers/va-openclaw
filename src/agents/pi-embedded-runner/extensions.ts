@@ -6,6 +6,7 @@ import { DEFAULT_CONTEXT_TOKENS } from "../defaults.js";
 import { setCompactionSafeguardRuntime } from "../pi-hooks/compaction-safeguard-runtime.js";
 import compactionSafeguardExtension from "../pi-hooks/compaction-safeguard.js";
 import contextPruningExtension from "../pi-hooks/context-pruning.js";
+import mediaUploadExtension from "../pi-hooks/media-upload.js";
 import { setContextPruningRuntime } from "../pi-hooks/context-pruning/runtime.js";
 import { computeEffectiveSettings } from "../pi-hooks/context-pruning/settings.js";
 import { makeToolPrunablePredicate } from "../pi-hooks/context-pruning/tools.js";
@@ -114,6 +115,7 @@ export function buildEmbeddedExtensionFactories(params: {
   if (pruningFactory) {
     factories.push(pruningFactory);
   }
+  factories.push(mediaUploadExtension);
   return factories;
 }
 

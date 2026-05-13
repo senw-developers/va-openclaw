@@ -2,6 +2,7 @@ import fs from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { loadConfig } from "../config/config.js";
+import { resolveSessionFilePath } from "../config/sessions/paths.js";
 import { loadSessionStore } from "../config/sessions.js";
 import { onSessionTranscriptUpdate } from "../sessions/transcript-events.js";
 import {
@@ -21,6 +22,10 @@ import {
   getHeader,
   resolveTrustedHttpOperatorScopes,
 } from "./http-utils.js";
+import {
+  enrichMessagesWithFileRefs,
+  readUserAttachmentFileIdsByMessage,
+} from "./chat-file-refs.js";
 import { authorizeOperatorScopesForMethod } from "./method-scopes.js";
 import { DEFAULT_CHAT_HISTORY_TEXT_MAX_CHARS } from "./server-methods/chat.js";
 import { buildSessionHistorySnapshot, SessionHistorySseState } from "./session-history-state.js";
@@ -161,8 +166,22 @@ export async function handleSessionHistoryHttpRequest(
   const rawSnapshot = entry?.sessionId
     ? readSessionMessages(entry.sessionId, target.storePath, entry.sessionFile)
     : [];
+  // Enrich before the sync sanitizer strips details.nabuFileIds.
+  const userAttachments = entry?.sessionId
+    ? readUserAttachmentFileIdsByMessage(
+        resolveSessionFilePath(
+          entry.sessionId,
+          entry.sessionFile ? { sessionFile: entry.sessionFile } : undefined,
+          target.storePath ? { sessionsDir: path.dirname(target.storePath) } : undefined,
+        ),
+      )
+    : undefined;
+  const enrichedSnapshot = await enrichMessagesWithFileRefs(rawSnapshot, {
+    requestId: `sessions-history-http:${target.canonicalKey}`,
+    ...(userAttachments ? { userAttachments } : {}),
+  });
   const historySnapshot = buildSessionHistorySnapshot({
-    rawMessages: rawSnapshot,
+    rawMessages: enrichedSnapshot,
     maxChars: effectiveMaxChars,
     limit,
     cursor,

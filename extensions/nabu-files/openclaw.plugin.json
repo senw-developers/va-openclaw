@@ -1,0 +1,54 @@
+{
+  "id": "nabu-files",
+  "name": "@va-team/nabu-files",
+  "description": "Routes outbound tool media and inbound channel attachments to the Nabu Files API on NestJS so binaries live in MinIO/Hetzner instead of accumulating on per-tenant disk.",
+  "enabledByDefault": false,
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "apiToken": {
+        "type": ["string", "object"],
+        "description": "Per-organization skill-token issued by NestJS Files API module (purpose=files-api). Accepts either a literal string or a SecretRef object {source, provider, id} resolved from env."
+      },
+      "apiBaseUrl": {
+        "type": "string",
+        "description": "NestJS backend base URL - Docker-internal"
+      },
+      "requestTimeoutMs": {
+        "type": "number",
+        "description": "Per-request HTTP timeout for skill-upload and skill-resolve calls. Default 30s."
+      },
+      "maxRetries": {
+        "type": "number",
+        "description": "Number of retry attempts on transient failure. Default 3."
+      },
+      "maxConcurrentUploads": {
+        "type": "number",
+        "description": "Self-imposed cap on parallel uploads per chat turn to avoid quota-SUM race. Default 8."
+      }
+    }
+  },
+  "uiHints": {
+    "apiToken": {
+      "label": "Skill Token",
+      "sensitive": true
+    },
+    "apiBaseUrl": {
+      "label": "API Base URL",
+      "placeholder": "http://app:6001"
+    },
+    "requestTimeoutMs": {
+      "label": "Request timeout (ms)",
+      "placeholder": "30000"
+    },
+    "maxRetries": {
+      "label": "Max retries",
+      "placeholder": "3"
+    },
+    "maxConcurrentUploads": {
+      "label": "Max concurrent uploads",
+      "placeholder": "8"
+    }
+  }
+}

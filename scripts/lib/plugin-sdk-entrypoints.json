@@ -47,6 +47,8 @@
   "ssrf-runtime",
   "media-runtime",
   "media-generation-runtime",
+  "media-uploader",
+  "media-resolver",
   "conversation-binding-runtime",
   "conversation-runtime",
   "matrix-runtime-heavy",
