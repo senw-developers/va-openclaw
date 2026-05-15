@@ -278,6 +278,14 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     includeInOpenClawGroup: true,
   },
   {
+    id: "deliver",
+    label: "deliver",
+    description: "Mark a workspace file as a user-facing download",
+    sectionId: "media",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
     id: "music_generate",
     label: "music_generate",
     description: "Music generation",

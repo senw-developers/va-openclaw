@@ -958,6 +958,33 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("## Reactions");
     expect(prompt).toContain("Reactions are enabled for Telegram in MINIMAL mode.");
   });
+
+  it("includes the deliver guidance before the cache boundary when deliver is available", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      toolNames: ["deliver", "message"],
+    });
+    expect(prompt).toContain("## Delivering Files");
+    expect(prompt).toContain("deliver their output to the user automatically");
+    const sectionIdx = prompt.indexOf("## Delivering Files");
+    const boundaryIdx = prompt.indexOf(SYSTEM_PROMPT_CACHE_BOUNDARY);
+    expect(sectionIdx).toBeGreaterThan(-1);
+    expect(boundaryIdx).toBeGreaterThan(-1);
+    expect(sectionIdx).toBeLessThan(boundaryIdx); // stays in the cache-stable prefix
+  });
+
+  it("omits deliver guidance when the tool is unavailable or in minimal mode", () => {
+    expect(
+      buildAgentSystemPrompt({ workspaceDir: "/tmp/openclaw", toolNames: ["message"] }),
+    ).not.toContain("## Delivering Files");
+    expect(
+      buildAgentSystemPrompt({
+        workspaceDir: "/tmp/openclaw",
+        promptMode: "minimal",
+        toolNames: ["deliver"],
+      }),
+    ).not.toContain("## Delivering Files");
+  });
 });
 
 describe("buildSubagentSystemPrompt", () => {

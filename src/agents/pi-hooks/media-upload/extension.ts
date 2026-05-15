@@ -4,7 +4,6 @@ import type {
   ToolResultEvent,
   ToolResultEventResult,
 } from "@mariozechner/pi-coding-agent";
-
 import { detectMime } from "../../../media/mime.js";
 import { splitMediaFromOutput } from "../../../media/parse.js";
 import { getMediaUploader, type MediaUploadResult } from "../../../plugin-sdk/media-uploader.js";
@@ -73,7 +72,16 @@ export default function mediaUploadExtension(api: ExtensionAPI): void {
 
     if (rewrites.size === 0) return;
 
-    const nextContent = rewriteContent(event.content as ContentItem[], rewrites);
+    const nextContent = [...rewriteContent(event.content as ContentItem[], rewrites)];
+    // The MEDIA: path is stripped from content (FE renders from fileRefs[]),
+    // which otherwise leaves the model blind to whether delivery succeeded —
+    // it then regenerates or re-delivers. A URL-free confirmation closes that
+    // loop without leaking a signed URL the model would echo into prose.
+    const n = rewrites.size;
+    nextContent.push({
+      type: "text",
+      text: `[${n} file${n === 1 ? "" : "s"} delivered to the user and available for download. Do not regenerate or call deliver for ${n === 1 ? "it" : "them"} again.]`,
+    });
     const nextDetails = rewriteDetails(event.details, rewrites, dedup(fileIds));
 
     return {
@@ -107,6 +115,15 @@ function collectMediaCandidates(event: ToolResultEvent): MediaCandidate[] {
         for (const u of media.mediaUrls) add(u);
       }
     }
+    // `deliver` tool results carry user-facing files here. Same upload/rewrite
+    // path as media: signed URL → details.media.mediaUrls (channels) +
+    // details.nabuFileIds (web fileRefs).
+    const deliverables = (details as { deliverables?: unknown }).deliverables;
+    if (Array.isArray(deliverables)) {
+      for (const d of deliverables) {
+        if (d && typeof d === "object") add((d as { path?: unknown }).path);
+      }
+    }
   }
 
   if (Array.isArray(event.content)) {
@@ -123,7 +140,10 @@ function collectMediaCandidates(event: ToolResultEvent): MediaCandidate[] {
   return Array.from(seen.entries()).map(([source, index]) => ({ source, index }));
 }
 
-function rewriteContent(content: ContentItem[], rewrites: Map<string, MediaUploadResult>): ContentItem[] {
+function rewriteContent(
+  content: ContentItem[],
+  rewrites: Map<string, MediaUploadResult>,
+): ContentItem[] {
   if (!Array.isArray(content) || content.length === 0) return content;
   return content.map((block) => {
     if (!block || typeof block !== "object") return block;
@@ -149,7 +169,10 @@ function rewriteDetails(
   rewrites: Map<string, MediaUploadResult>,
   fileIds: number[],
 ): unknown {
-  const base = details && typeof details === "object" && !Array.isArray(details) ? { ...(details as Record<string, unknown>) } : {};
+  const base =
+    details && typeof details === "object" && !Array.isArray(details)
+      ? { ...(details as Record<string, unknown>) }
+      : {};
   const mediaField = (base as { media?: unknown }).media;
   if (mediaField && typeof mediaField === "object" && !Array.isArray(mediaField)) {
     const media = { ...(mediaField as DetailsMedia) };
@@ -168,7 +191,9 @@ function rewriteDetails(
     if (signedUrls.length > 0) (base as { media?: unknown }).media = { mediaUrls: signedUrls };
   }
   const existingIds = Array.isArray((base as { nabuFileIds?: unknown }).nabuFileIds)
-    ? ((base as { nabuFileIds: unknown[] }).nabuFileIds.filter((n) => typeof n === "number") as number[])
+    ? ((base as { nabuFileIds: unknown[] }).nabuFileIds.filter(
+        (n) => typeof n === "number",
+      ) as number[])
     : [];
   (base as { nabuFileIds?: unknown }).nabuFileIds = dedup([...existingIds, ...fileIds]);
   return base;

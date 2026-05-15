@@ -235,6 +235,20 @@ function buildMessagingSection(params: {
   ];
 }
 
+function buildDeliverSection(params: { isMinimal: boolean; availableTools: Set<string> }) {
+  if (params.isMinimal || !params.availableTools.has("deliver")) {
+    return [];
+  }
+  return [
+    "## Delivering Files",
+    "- When YOU create a file (via bash/exec/write) that the user should download (CSV, XLSX, DOCX, PDF, zip, etc.), call `deliver` once with its path. The user cannot reach the workspace filesystem otherwise.",
+    "- `image_generate`, `video_generate`, and `music_generate` deliver their output to the user automatically. Do NOT call `deliver` for their files, and do NOT regenerate if their result does not show a path — a successful generation is already delivered.",
+    "- If a tool result says files were delivered, treat that as done. Do not re-deliver or regenerate.",
+    "- Do not paste the path or a URL into your reply text.",
+    "",
+  ];
+}
+
 function buildVoiceSection(params: { isMinimal: boolean; ttsHint?: string }) {
   if (params.isMinimal) {
     return [];
@@ -666,6 +680,7 @@ export function buildAgentSystemPrompt(params: {
       runtimeChannel,
       messageToolHints: params.messageToolHints,
     }),
+    ...buildDeliverSection({ isMinimal, availableTools }),
     ...buildVoiceSection({ isMinimal, ttsHint: params.ttsHint }),
   ];
 

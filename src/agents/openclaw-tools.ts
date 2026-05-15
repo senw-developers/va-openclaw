@@ -13,6 +13,7 @@ import { createAgentsListTool } from "./tools/agents-list-tool.js";
 import { createCanvasTool } from "./tools/canvas-tool.js";
 import type { AnyAgentTool } from "./tools/common.js";
 import { createCronTool } from "./tools/cron-tool.js";
+import { createDeliverTool } from "./tools/deliver-tool.js";
 import { createGatewayTool } from "./tools/gateway-tool.js";
 import { createImageGenerateTool } from "./tools/image-generate-tool.js";
 import { createImageTool } from "./tools/image-tool.js";
@@ -161,6 +162,10 @@ export function createOpenClawTools(
     sandbox,
     fsPolicy: options?.fsPolicy,
   });
+  const deliverTool = createDeliverTool({
+    config: options?.config,
+    workspaceDir,
+  });
   const videoGenerateTool = createVideoGenerateTool({
     config: options?.config,
     agentDir: options?.agentDir,
@@ -236,6 +241,7 @@ export function createOpenClawTools(
       config: options?.config,
     }),
     ...(imageGenerateTool ? [imageGenerateTool] : []),
+    deliverTool,
     ...(musicGenerateTool ? [musicGenerateTool] : []),
     ...(videoGenerateTool ? [videoGenerateTool] : []),
     createGatewayTool({
