@@ -246,7 +246,7 @@
         "enabled": true,
         "config": {
           "enabled": true,
-          "apiBaseUrl": "http://app:6001"
+          "apiBaseUrl": "http://nabu-gateway:6200"
         }
       },
       "nabu-email": {
