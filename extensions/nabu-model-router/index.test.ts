@@ -72,10 +72,10 @@ function mockHttpsResponse(responseBody: string, statusCode = 200) {
     }),
     destroy: vi.fn(),
   });
-  vi.spyOn(https, "request").mockImplementation((_opts: unknown, cb?: Function) => {
+  vi.spyOn(https, "request").mockImplementation(((_opts: unknown, cb?: (res: unknown) => void) => {
     if (cb) (req as EventEmitter).on("response", cb);
     return req as unknown as ReturnType<typeof https.request>;
-  });
+  }) as unknown as typeof https.request);
 }
 
 function mockHttpsError(errorMessage: string) {
@@ -88,9 +88,9 @@ function mockHttpsError(errorMessage: string) {
     }),
     destroy: vi.fn(),
   });
-  vi.spyOn(https, "request").mockImplementation((_opts: unknown, _cb?: Function) => {
+  vi.spyOn(https, "request").mockImplementation(((_opts: unknown, _cb?: (res: unknown) => void) => {
     return req as unknown as ReturnType<typeof https.request>;
-  });
+  }) as unknown as typeof https.request);
 }
 
 function classifierJson(complexity: string, confidence: string): string {

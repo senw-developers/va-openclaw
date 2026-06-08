@@ -11,7 +11,7 @@ import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import * as path from "node:path";
-import { SessionManager } from "@mariozechner/pi-coding-agent";
+import { SessionManager } from "../agents/sessions/session-manager.js";
 import { extensionForMime } from "@openclaw/media-core/mime";
 import { resolveIntegerOption } from "@openclaw/normalization-core/number-coercion";
 import { isClientToolNameConflictError } from "../agents/agent-tool-definition-adapter.js";
@@ -50,7 +50,7 @@ import {
   stripMarkdownImages,
 } from "./chat-file-refs.js";
 import { sendJson, setSseHeaders, watchClientDisconnect, writeDone } from "./http-common.js";
-import { loadSessionEntry, readSessionMessages } from "./session-utils.js";
+import { loadSessionEntry, readSessionMessagesAsync } from "./session-utils.js";
 import { handleGatewayPostJsonEndpoint } from "./http-endpoint-helpers.js";
 import {
   getBearerToken,
@@ -480,7 +480,10 @@ async function resolveTurnFileRefs(
   try {
     const { entry, storePath } = loadSessionEntry(sessionKey);
     if (!entry?.sessionId) return [];
-    const messages = readSessionMessages(entry.sessionId, storePath, entry.sessionFile);
+    const messages = await readSessionMessagesAsync(entry.sessionId, storePath, entry.sessionFile, {
+      mode: "full",
+      reason: "openresponses turn fileRefs",
+    });
 
     let turnStart = -1;
     for (let i = messages.length - 1; i >= 0; i--) {
