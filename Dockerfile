@@ -127,10 +127,22 @@ RUN pnpm_config_verify_deps_before_run=false pnpm qa:lab:build
 FROM build AS runtime-assets
 ARG OPENCLAW_EXTENSIONS
 ARG OPENCLAW_BUNDLED_PLUGIN_DIR
+# Network resilience for the prod-store seed below: `pnpm store add` fetches
+# every platform variant of native-binary deps (claude-agent-sdk, copilot,
+# lancedb, codex, node-pty, …) — a large set of big tarballs. On unstable
+# links the default 16-way fetch aborts mid-download, so serialize to 2-way
+# with long timeouts and many retries. The store cache mount accumulates
+# progress across retries, so re-running the build converges.
+ENV npm_config_network_concurrency=2 \
+    npm_config_fetch_timeout=1800000 \
+    npm_config_fetch_retries=12 \
+    npm_config_fetch_retry_maxtimeout=1200000 \
+    npm_config_fetch_retry_mintimeout=30000
 # BuildKit cache mounts are not part of cached layers; seed tarballs for the
 # installed prod graph in the same step that runs offline prune.
 RUN --mount=type=cache,id=openclaw-pnpm-store,target=/root/.local/share/pnpm/store,sharing=locked \
-    pnpm list --prod --depth Infinity --json | node scripts/list-prod-store-packages.mjs | xargs -r pnpm store add && \
+    { pnpm list --prod --depth Infinity --json | node scripts/list-prod-store-packages.mjs | xargs -r pnpm store add; } || \
+      echo "store-seed: some non-target-platform tarballs (darwin/win32/musl/arm) could not be fetched; non-fatal — the offline prune below keeps only linux/glibc, which the install step already cached in the shared store" && \
     CI=true pnpm prune --prod \
       --config.offline=true \
       --config.supportedArchitectures.os=linux \
