@@ -1,6 +1,7 @@
+// Matrix plugin module implements exec approval resolver behavior.
 import { resolveApprovalOverGateway } from "openclaw/plugin-sdk/approval-gateway-runtime";
 import type { ExecApprovalReplyDecision } from "openclaw/plugin-sdk/approval-runtime";
-import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import { isApprovalNotFoundError } from "openclaw/plugin-sdk/error-runtime";
 
 export { isApprovalNotFoundError };
@@ -21,5 +22,3 @@ export async function resolveMatrixApproval(params: {
     clientDisplayName: `Matrix approval (${params.senderId?.trim() || "unknown"})`,
   });
 }
-
-export const resolveMatrixExecApproval = resolveMatrixApproval;

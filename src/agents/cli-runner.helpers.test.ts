@@ -1,23 +1,28 @@
+/** Tests CLI runner prompt/image/system-prompt helper utilities. */
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { ImageContent } from "@mariozechner/pi-ai";
+import { MAX_IMAGE_BYTES } from "@openclaw/media-core/constants";
+import type { ImageContent } from "openclaw/plugin-sdk/llm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createSolidPngBuffer } from "../../test/helpers/image-fixtures.js";
 import { resolvePreferredOpenClawTmpDir } from "../infra/tmp-openclaw-dir.js";
-import { MAX_IMAGE_BYTES } from "../media/constants.js";
+import { escapeRegExp } from "../shared/regexp.js";
 import {
   buildCliArgs,
   loadPromptRefImages,
   prepareCliPromptImagePayload,
   resolveCliRunQueueKey,
   writeCliImages,
+  writeCliSystemPromptFile,
 } from "./cli-runner/helpers.js";
-import * as promptImageUtils from "./pi-embedded-runner/run/images.js";
+import * as promptImageUtils from "./embedded-agent-runner/run/images.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
 import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "./system-prompt-cache-boundary.js";
 import * as toolImages from "./tool-images.js";
 
 describe("loadPromptRefImages", () => {
   beforeEach(() => {
+    // Restore spies because these helpers use real modules with per-test mocks.
     vi.restoreAllMocks();
   });
 
@@ -30,8 +35,25 @@ describe("loadPromptRefImages", () => {
         prompt: "just text",
         workspaceDir: "/workspace",
       }),
-    ).resolves.toEqual([]);
+    ).resolves.toStrictEqual([]);
 
+    expect(loadImageFromRefSpy).not.toHaveBeenCalled();
+    expect(sanitizeImageBlocksSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not reload OpenClaw CLI image cache paths from prior prompt text", async () => {
+    const loadImageFromRefSpy = vi.spyOn(promptImageUtils, "loadImageFromRef");
+    const sanitizeImageBlocksSpy = vi.spyOn(toolImages, "sanitizeImageBlocks");
+
+    await expect(
+      loadPromptRefImages({
+        prompt:
+          'Called the Read tool with {"file_path":"/workspace/.openclaw-cli-images/stale.png"}',
+        workspaceDir: "/workspace",
+      }),
+    ).resolves.toStrictEqual([]);
+
+    // Cached image paths are generated output, not fresh user references.
     expect(loadImageFromRefSpy).not.toHaveBeenCalled();
     expect(sanitizeImageBlocksSpy).not.toHaveBeenCalled();
   });
@@ -67,7 +89,8 @@ describe("loadPromptRefImages", () => {
     });
 
     const [ref, workspaceDir, options] = loadImageFromRefSpy.mock.calls[0] ?? [];
-    expect(ref).toMatchObject({ resolved: "/tmp/photo.png", type: "path" });
+    expect(ref?.resolved).toBe("/tmp/photo.png");
+    expect(ref?.type).toBe("path");
     expect(workspaceDir).toBe("/workspace");
     expect(options).toEqual({
       maxBytes: MAX_IMAGE_BYTES,
@@ -129,6 +152,8 @@ describe("buildCliArgs", () => {
   });
 
   it("strips the internal cache boundary from CLI system prompt args", () => {
+    // The boundary is internal prompt-cache metadata and must never reach the
+    // downstream CLI as literal text.
     expect(
       buildCliArgs({
         backend: {
@@ -141,6 +166,39 @@ describe("buildCliArgs", () => {
         useResume: false,
       }),
     ).toEqual(["-p", "--append-system-prompt", "Stable prefix\nDynamic suffix"]);
+  });
+
+  it("passes Codex system prompts via a model instructions file config override", () => {
+    expect(
+      buildCliArgs({
+        backend: {
+          command: "codex",
+          systemPromptFileConfigArg: "-c",
+          systemPromptFileConfigKey: "model_instructions_file",
+        },
+        baseArgs: ["exec", "--json"],
+        modelId: "gpt-5.4",
+        systemPrompt: "Stable prefix",
+        systemPromptFilePath: "/tmp/openclaw/system-prompt.md",
+        useResume: false,
+      }),
+    ).toEqual(["exec", "--json", "-c", 'model_instructions_file="/tmp/openclaw/system-prompt.md"']);
+  });
+
+  it("passes Claude system prompts through its file flag", () => {
+    expect(
+      buildCliArgs({
+        backend: {
+          command: "claude",
+          systemPromptFileArg: "--append-system-prompt-file",
+        },
+        baseArgs: ["-p"],
+        modelId: "claude-sonnet-4-6",
+        systemPrompt: "Stable prefix",
+        systemPromptFilePath: "/tmp/openclaw/system-prompt.md",
+        useResume: false,
+      }),
+    ).toEqual(["-p", "--append-system-prompt-file", "/tmp/openclaw/system-prompt.md"]);
   });
 
   it("replaces prompt placeholders before falling back to a trailing positional prompt", () => {
@@ -189,10 +247,14 @@ describe("writeCliImages", () => {
     });
 
     try {
-      expect(first.paths).toHaveLength(1);
+      expect(first.paths).toStrictEqual([
+        expect.stringMatching(
+          new RegExp(
+            `^${escapeRegExp(`${resolvePreferredOpenClawTmpDir()}/openclaw-cli-images/`)}.*\\.png$`,
+          ),
+        ),
+      ]);
       expect(second.paths).toEqual(first.paths);
-      expect(first.paths[0]).toContain(`${resolvePreferredOpenClawTmpDir()}/openclaw-cli-images/`);
-      expect(first.paths[0]).toMatch(/\.png$/);
       await expect(fs.readFile(first.paths[0])).resolves.toEqual(Buffer.from(image.data, "base64"));
     } finally {
       await fs.rm(first.paths[0], { force: true });
@@ -229,13 +291,7 @@ describe("writeCliImages", () => {
       path.join(resolvePreferredOpenClawTmpDir(), "openclaw-cli-prompt-image-"),
     );
     const sourceImage = path.join(tempDir, "bb-image.png");
-    await fs.writeFile(
-      sourceImage,
-      Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/woAAn8B9FD5fHAAAAAASUVORK5CYII=",
-        "base64",
-      ),
-    );
+    await fs.writeFile(sourceImage, createSolidPngBuffer(1, 1, { r: 255, g: 255, b: 255 }));
 
     try {
       const prepared = await prepareCliPromptImagePayload({
@@ -257,13 +313,18 @@ describe("writeCliImages", () => {
         baseArgs: ["exec", "--json"],
         modelId: "gpt-5.4",
         imagePaths: prepared.imagePaths,
+        promptArg: "describe the attached image",
         useResume: false,
       });
 
-      const imageArgIndex = argv.indexOf("--image");
-      expect(imageArgIndex).toBeGreaterThanOrEqual(0);
-      expect(argv[imageArgIndex + 1]).toContain("openclaw-cli-images");
-      expect(argv[imageArgIndex + 1]).not.toBe(sourceImage);
+      expect(argv).toStrictEqual([
+        "exec",
+        "--json",
+        "describe the attached image",
+        "--image",
+        expect.stringContaining("openclaw-cli-images"),
+      ]);
+      expect(argv[4]).not.toBe(sourceImage);
 
       await prepared.cleanupImages?.();
     } finally {
@@ -276,13 +337,7 @@ describe("writeCliImages", () => {
       path.join(resolvePreferredOpenClawTmpDir(), "openclaw-cli-prompt-image-generic-"),
     );
     const sourceImage = path.join(tempDir, "claude-image.png");
-    await fs.writeFile(
-      sourceImage,
-      Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/woAAn8B9FD5fHAAAAAASUVORK5CYII=",
-        "base64",
-      ),
-    );
+    await fs.writeFile(sourceImage, createSolidPngBuffer(1, 1, { r: 255, g: 255, b: 255 }));
 
     try {
       const prompt = `[media attached: ${sourceImage} (image/png)]\n\n<media:image>`;
@@ -362,13 +417,7 @@ describe("writeCliImages", () => {
       path.join(resolvePreferredOpenClawTmpDir(), "openclaw-cli-explicit-images-"),
     );
     const sourceImage = path.join(tempDir, "ignored-prompt-image.png");
-    await fs.writeFile(
-      sourceImage,
-      Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/woAAn8B9FD5fHAAAAAASUVORK5CYII=",
-        "base64",
-      ),
-    );
+    await fs.writeFile(sourceImage, createSolidPngBuffer(1, 1, { r: 255, g: 255, b: 255 }));
     const explicitImage: ImageContent = {
       type: "image",
       data: "c29tZS1leHBsaWNpdC1pbWFnZQ==",
@@ -399,7 +448,7 @@ describe("writeCliImages", () => {
         useResume: false,
       });
 
-      expect(argv.filter((arg) => arg === "--image")).toHaveLength(1);
+      expect(argv.reduce((count, arg) => count + (arg === "--image" ? 1 : 0), 0)).toBe(1);
       expect(argv[argv.indexOf("--image") + 1]).toContain("openclaw-cli-images");
       await expect(fs.readFile(prepared.imagePaths?.[0] ?? "")).resolves.toEqual(
         Buffer.from(explicitImage.data, "base64"),
@@ -409,6 +458,35 @@ describe("writeCliImages", () => {
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("writeCliSystemPromptFile", () => {
+  it("writes stripped system prompts to a private temp file", async () => {
+    const written = await writeCliSystemPromptFile({
+      backend: {
+        command: "codex",
+        systemPromptFileConfigKey: "model_instructions_file",
+      },
+      systemPrompt: `Stable prefix${SYSTEM_PROMPT_CACHE_BOUNDARY}Dynamic suffix`,
+    });
+
+    try {
+      expect(written.filePath).toContain("openclaw-cli-system-prompt-");
+      await expect(fs.readFile(written.filePath ?? "", "utf-8")).resolves.toBe(
+        "Stable prefix\nDynamic suffix",
+      );
+    } finally {
+      await written.cleanup();
+    }
+    let err: unknown;
+    try {
+      await fs.access(written.filePath ?? "");
+    } catch (caught) {
+      err = caught;
+    }
+    expect(err).toBeInstanceOf(Error);
+    expect((err as NodeJS.ErrnoException).code).toBe("ENOENT");
   });
 });
 

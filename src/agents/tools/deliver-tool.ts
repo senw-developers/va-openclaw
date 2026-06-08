@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { OpenClawConfig } from "../../config/config.js";
 import { logInfo } from "../../logger.js";
-import { detectMime } from "../../media/mime.js";
+import { detectMime } from "@openclaw/media-core/mime";
 import { resolveWorkspaceRoot } from "../workspace-dir.js";
 import { ToolInputError, readStringParam, type AnyAgentTool } from "./common.js";
 import { resolveMediaToolLocalRoots } from "./media-tool-shared.js";

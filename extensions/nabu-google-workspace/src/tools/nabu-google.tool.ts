@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { jsonResult, stringEnum } from "openclaw/plugin-sdk/channel-actions";
 import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import type { AnyAgentTool, OpenClawPluginApi, OpenClawPluginToolContext } from "../../api.js";

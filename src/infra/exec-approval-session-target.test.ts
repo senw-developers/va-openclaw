@@ -1,8 +1,9 @@
-import fs from "node:fs";
+// Covers approval session target resolution.
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import type { SessionEntry } from "../config/sessions.js";
+import { writeSessionStoreForTest } from "../config/sessions/test-helpers.js";
 import {
   parseRawSessionConversationRef,
   parseThreadSessionSuffix,
@@ -65,8 +66,7 @@ function writeStoreFile(
   storePath: string,
   entries: Record<string, Partial<SessionEntry>>,
 ): OpenClawConfig {
-  fs.mkdirSync(path.dirname(storePath), { recursive: true });
-  fs.writeFileSync(storePath, JSON.stringify(entries), "utf-8");
+  writeSessionStoreForTest(storePath, entries);
   return {
     session: { store: storePath },
   } as OpenClawConfig;
@@ -105,6 +105,24 @@ function buildPluginRequest(
     createdAtMs: 1000,
     expiresAtMs: 6000,
   };
+}
+
+function resolveSlackPluginOriginTarget(params: { cfg: OpenClawConfig; turnSourceTo: string }) {
+  return resolveApprovalRequestOriginTarget({
+    cfg: params.cfg,
+    request: buildPluginRequest({
+      turnSourceChannel: "slack",
+      turnSourceTo: params.turnSourceTo,
+    }),
+    channel: "slack",
+    accountId: "default",
+    resolveTurnSourceTarget: (request) =>
+      request.request.turnSourceChannel === "slack" && request.request.turnSourceTo
+        ? { to: request.request.turnSourceTo }
+        : null,
+    resolveSessionTarget: (sessionTarget) => ({ to: sessionTarget.to }),
+    targetsMatch: (a, b) => a.to === b.to,
+  });
 }
 
 describe("exec approval session target", () => {
@@ -426,20 +444,9 @@ describe("exec approval session target", () => {
         },
       });
 
-      const target = resolveApprovalRequestOriginTarget({
+      const target = resolveSlackPluginOriginTarget({
         cfg,
-        request: buildPluginRequest({
-          turnSourceChannel: "slack",
-          turnSourceTo: "channel:C123",
-        }),
-        channel: "slack",
-        accountId: "default",
-        resolveTurnSourceTarget: (request) =>
-          request.request.turnSourceChannel === "slack" && request.request.turnSourceTo
-            ? { to: request.request.turnSourceTo }
-            : null,
-        resolveSessionTarget: (sessionTarget) => ({ to: sessionTarget.to }),
-        targetsMatch: (a, b) => a.to === b.to,
+        turnSourceTo: "channel:C123",
       });
 
       expect(target).toEqual({ to: "channel:C123" });
@@ -458,20 +465,9 @@ describe("exec approval session target", () => {
         },
       });
 
-      const target = resolveApprovalRequestOriginTarget({
+      const target = resolveSlackPluginOriginTarget({
         cfg,
-        request: buildPluginRequest({
-          turnSourceChannel: "slack",
-          turnSourceTo: "channel:C999",
-        }),
-        channel: "slack",
-        accountId: "default",
-        resolveTurnSourceTarget: (request) =>
-          request.request.turnSourceChannel === "slack" && request.request.turnSourceTo
-            ? { to: request.request.turnSourceTo }
-            : null,
-        resolveSessionTarget: (sessionTarget) => ({ to: sessionTarget.to }),
-        targetsMatch: (a, b) => a.to === b.to,
+        turnSourceTo: "channel:C999",
       });
 
       expect(target).toBeNull();

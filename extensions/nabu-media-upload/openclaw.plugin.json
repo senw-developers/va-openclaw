@@ -1,0 +1,16 @@
+{
+  "id": "nabu-media-upload",
+  "activation": {
+    "onStartup": false
+  },
+  "name": "@va-team/nabu-media-upload",
+  "description": "Uploads agent tool-result media (local paths, MiniMax CDN) to the Nabu Files API and rewrites content/details with signed URLs and web file refs.",
+  "contracts": {
+    "agentToolResultMiddleware": ["openclaw"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

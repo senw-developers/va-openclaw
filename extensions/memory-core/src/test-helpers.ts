@@ -1,14 +1,22 @@
+// Memory Core helper module supports test helpers behavior.
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
+import { resolvePreferredOpenClawTmpDir } from "openclaw/plugin-sdk/temp-path";
 import { afterAll, beforeAll } from "vitest";
+import {
+  configureMemoryCoreDreamingStateForTests,
+  resetMemoryCoreDreamingStateForTests,
+} from "./dreaming-state.js";
 
 export function createMemoryCoreTestHarness() {
   let fixtureRoot = "";
   let caseId = 0;
 
   beforeAll(async () => {
-    fixtureRoot = await fs.mkdtemp(path.join(os.tmpdir(), "memory-core-test-fixtures-"));
+    await configureMemoryCoreDreamingStateForTests();
+    fixtureRoot = await fs.mkdtemp(
+      path.join(resolvePreferredOpenClawTmpDir(), "memory-core-test-fixtures-"),
+    );
   });
 
   afterAll(async () => {
@@ -16,6 +24,7 @@ export function createMemoryCoreTestHarness() {
       return;
     }
     await fs.rm(fixtureRoot, { recursive: true, force: true });
+    resetMemoryCoreDreamingStateForTests();
   });
 
   async function createTempWorkspace(prefix: string): Promise<string> {

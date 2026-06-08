@@ -1,3 +1,4 @@
+// Memory Core type declarations define plugin contracts.
 export type MemoryCommandOptions = {
   agent?: string;
   json?: boolean;
@@ -29,4 +30,13 @@ export type MemoryPromoteExplainOptions = MemoryCommandOptions & {
 
 export type MemoryRemHarnessOptions = MemoryCommandOptions & {
   includePromoted?: boolean;
+  path?: string;
+  grounded?: boolean;
+};
+
+export type MemoryRemBackfillOptions = MemoryCommandOptions & {
+  path?: string;
+  rollback?: boolean;
+  stageShortTerm?: boolean;
+  rollbackShortTerm?: boolean;
 };

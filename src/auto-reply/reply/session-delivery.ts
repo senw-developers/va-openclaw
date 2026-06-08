@@ -1,11 +1,12 @@
-import type { SessionEntry } from "../../config/sessions.js";
-import { buildAgentMainSessionKey } from "../../routing/session-key.js";
-import { parseAgentSessionKey } from "../../sessions/session-key-utils.js";
+// Resolves persisted delivery route fields for session-bound replies.
 import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
-} from "../../shared/string-coerce.js";
+} from "@openclaw/normalization-core/string-coerce";
+import type { SessionEntry } from "../../config/sessions.js";
+import { buildAgentMainSessionKey } from "../../routing/session-key.js";
+import { parseAgentSessionKey } from "../../sessions/session-key-utils.js";
 import {
   deliveryContextFromSession,
   deliveryContextKey,
@@ -97,6 +98,7 @@ export function resolveLastChannelRaw(params: {
   originatingChannelRaw?: string;
   persistedLastChannel?: string;
   sessionKey?: string;
+  isInterSession?: boolean;
 }): string | undefined {
   const originatingChannel = normalizeMessageChannel(params.originatingChannelRaw);
   // WebChat should own reply routing for direct-session UI turns, but only when
@@ -109,6 +111,14 @@ export function resolveLastChannelRaw(params: {
   const sessionKeyChannelHint = resolveSessionKeyChannelHint(params.sessionKey);
   const hasEstablishedExternalRoute =
     isExternalRoutingChannel(persistedChannel) || isExternalRoutingChannel(sessionKeyChannelHint);
+  // Inter-session messages (sessions_send) always arrive with channel=webchat,
+  // but must never overwrite an already-established external delivery route.
+  // Without this guard, a sessions_send call resets lastChannel to webchat,
+  // causing subsequent Discord (or other external) deliveries to be lost.
+  // See: https://github.com/openclaw/openclaw/issues/54441
+  if (params.isInterSession && hasEstablishedExternalRoute) {
+    return persistedChannel || sessionKeyChannelHint;
+  }
   if (
     originatingChannel === INTERNAL_MESSAGE_CHANNEL &&
     !hasEstablishedExternalRoute &&
@@ -136,12 +146,20 @@ export function resolveLastToRaw(params: {
   persistedLastTo?: string;
   persistedLastChannel?: string;
   sessionKey?: string;
+  isInterSession?: boolean;
 }): string | undefined {
   const originatingChannel = normalizeMessageChannel(params.originatingChannelRaw);
   const persistedChannel = normalizeMessageChannel(params.persistedLastChannel);
   const sessionKeyChannelHint = resolveSessionKeyChannelHint(params.sessionKey);
   const hasEstablishedExternalRouteForTo =
     isExternalRoutingChannel(persistedChannel) || isExternalRoutingChannel(sessionKeyChannelHint);
+  // Inter-session messages must not replace a persisted external `to` with
+  // webchat-scoped identifiers (e.g. session keys). Preserve the established
+  // external destination so deliveries continue routing to the correct channel.
+  // See: https://github.com/openclaw/openclaw/issues/54441
+  if (params.isInterSession && hasEstablishedExternalRouteForTo && params.persistedLastTo) {
+    return params.persistedLastTo;
+  }
   if (
     originatingChannel === INTERNAL_MESSAGE_CHANNEL &&
     !hasEstablishedExternalRouteForTo &&
@@ -203,6 +221,7 @@ export function maybeRetireLegacyMainDeliveryRoute(params: {
     return undefined;
   }
   if (
+    legacyMain.route === undefined &&
     legacyMain.deliveryContext === undefined &&
     legacyMain.lastChannel === undefined &&
     legacyMain.lastTo === undefined &&
@@ -215,6 +234,7 @@ export function maybeRetireLegacyMainDeliveryRoute(params: {
     key: canonicalMainSessionKey,
     entry: {
       ...legacyMain,
+      route: undefined,
       deliveryContext: undefined,
       lastChannel: undefined,
       lastTo: undefined,

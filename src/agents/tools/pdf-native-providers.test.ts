@@ -1,5 +1,12 @@
+// Native PDF provider tests cover direct Anthropic and Gemini request shapes,
+// base URL handling, and bounded API error reporting.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as pdfNativeProviders from "./pdf-native-providers.js";
+
+vi.mock("../../plugins/provider-runtime.js", () => ({
+  normalizeProviderTransportWithPlugin: (params: { context?: { baseUrl?: string } }) =>
+    params.context?.baseUrl ? { baseUrl: params.context.baseUrl } : undefined,
+}));
 
 const TEST_PDF_INPUT = { base64: "dGVzdA==", filename: "doc.pdf" } as const;
 
@@ -49,8 +56,17 @@ describe("native PDF provider API calls", () => {
     return fetchMock;
   };
 
+  const firstFetchCall = (fetchMock: { mock: { calls: unknown[][] } }): unknown[] => {
+    const call = fetchMock.mock.calls.at(0);
+    if (!call) {
+      throw new Error("expected fetch to be called");
+    }
+    return call;
+  };
+
   afterEach(() => {
     global.fetch = priorFetch;
+    vi.unstubAllEnvs();
   });
 
   it("anthropicAnalyzePdf sends correct request shape", async () => {
@@ -71,14 +87,34 @@ describe("native PDF provider API calls", () => {
 
     expect(result).toBe("Analysis of PDF");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, opts] = fetchMock.mock.calls[0];
+    const [url, opts] = firstFetchCall(fetchMock) as [
+      string,
+      { body: string; signal: AbortSignal },
+    ];
     expect(url).toContain("/v1/messages");
+    expect(opts.signal).toBeInstanceOf(AbortSignal);
+    expect(opts.signal.aborted).toBe(false);
     const body = JSON.parse(opts.body);
     expect(body.model).toBe("claude-opus-4-6");
     expect(body.messages[0].content).toHaveLength(2);
     expect(body.messages[0].content[0].type).toBe("document");
     expect(body.messages[0].content[0].source.media_type).toBe("application/pdf");
     expect(body.messages[0].content[1].type).toBe("text");
+  });
+
+  it("anthropicAnalyzePdf honors ANTHROPIC_BASE_URL when no base URL is configured", async () => {
+    vi.stubEnv("ANTHROPIC_BASE_URL", "https://anthropic-pdf-proxy.example/v1");
+    const fetchMock = mockFetchResponse({
+      ok: true,
+      json: async () => ({
+        content: [{ type: "text", text: "Analysis of PDF" }],
+      }),
+    });
+
+    await pdfNativeProviders.anthropicAnalyzePdf(makeAnthropicAnalyzeParams());
+
+    const [url] = firstFetchCall(fetchMock) as [string];
+    expect(url).toBe("https://anthropic-pdf-proxy.example/v1/messages");
   });
 
   it("anthropicAnalyzePdf throws on API error", async () => {
@@ -92,6 +128,71 @@ describe("native PDF provider API calls", () => {
     await expect(
       pdfNativeProviders.anthropicAnalyzePdf(makeAnthropicAnalyzeParams()),
     ).rejects.toThrow("Anthropic PDF request failed");
+  });
+
+  it("bounds large Anthropic API error bodies", async () => {
+    // Provider errors can contain large or sensitive payloads; surface a compact
+    // diagnostic and cancel the stream once the cap is reached.
+    let canceled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(`${"x".repeat(9_000)}tail-marker`));
+      },
+      cancel() {
+        canceled = true;
+      },
+    });
+    mockFetchResponse(
+      new Response(body, {
+        status: 400,
+        statusText: "Bad Request",
+      }),
+    );
+
+    const error = await pdfNativeProviders
+      .anthropicAnalyzePdf(makeAnthropicAnalyzeParams())
+      .catch((caught: unknown) => caught);
+
+    if (!(error instanceof Error)) {
+      throw new Error("expected Anthropic PDF request to throw an Error");
+    }
+    expect(error.message).toContain("Anthropic PDF request failed");
+    expect(error.message).not.toContain("tail-marker");
+    expect(error.message.length).toBeLessThan(500);
+    expect(canceled).toBe(true);
+  });
+
+  it("cancels Anthropic API error bodies that exactly fill the byte cap", async () => {
+    let canceled = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("x".repeat(8 * 1024)));
+      },
+      cancel() {
+        canceled = true;
+      },
+    });
+    mockFetchResponse(
+      new Response(body, {
+        status: 400,
+        statusText: "Bad Request",
+      }),
+    );
+
+    const error = await Promise.race([
+      pdfNativeProviders
+        .anthropicAnalyzePdf(makeAnthropicAnalyzeParams())
+        .catch((caught: unknown) => caught),
+      new Promise<Error>((_resolve, reject) => {
+        setTimeout(() => reject(new Error("timed out waiting for bounded error body")), 500);
+      }),
+    ]);
+
+    if (!(error instanceof Error)) {
+      throw new Error("expected Anthropic PDF request to throw an Error");
+    }
+    expect(error.message).toContain("Anthropic PDF request failed");
+    expect(canceled).toBe(true);
   });
 
   it("anthropicAnalyzePdf throws when response has no text", async () => {
@@ -108,6 +209,8 @@ describe("native PDF provider API calls", () => {
   });
 
   it("geminiAnalyzePdf sends correct request shape", async () => {
+    // Gemini API keys belong in headers here, not query strings that are more
+    // likely to leak through logs and URL diagnostics.
     const fetchMock = mockFetchResponse({
       ok: true,
       json: async () => ({
@@ -124,9 +227,16 @@ describe("native PDF provider API calls", () => {
 
     expect(result).toBe("Gemini PDF analysis");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, opts] = fetchMock.mock.calls[0];
+    const [url, opts] = firstFetchCall(fetchMock) as [
+      string,
+      { body: string; headers: Record<string, string>; signal: AbortSignal },
+    ];
     expect(url).toContain("generateContent");
     expect(url).toContain("gemini-2.5-pro");
+    expect(url).not.toContain("?key=");
+    expect(opts.headers["x-goog-api-key"]).toBe("test-key");
+    expect(opts.signal).toBeInstanceOf(AbortSignal);
+    expect(opts.signal.aborted).toBe(false);
     const body = JSON.parse(opts.body);
     expect(body.contents[0].parts).toHaveLength(2);
     expect(body.contents[0].parts[0].inline_data.mime_type).toBe("application/pdf");
@@ -176,7 +286,8 @@ describe("native PDF provider API calls", () => {
       }),
     );
 
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const [, opts] = firstFetchCall(fetchMock) as [unknown, { body: string }];
+    const body = JSON.parse(opts.body);
     expect(body.messages[0].content).toHaveLength(3);
     expect(body.messages[0].content[0].type).toBe("document");
     expect(body.messages[0].content[1].type).toBe("document");
@@ -195,7 +306,7 @@ describe("native PDF provider API calls", () => {
       makeAnthropicAnalyzeParams({ baseUrl: "https://custom.example.com" }),
     );
 
-    expect(fetchMock.mock.calls[0][0]).toContain("https://custom.example.com/v1/messages");
+    expect(firstFetchCall(fetchMock)[0]).toContain("https://custom.example.com/v1/messages");
   });
 
   it("anthropicAnalyzePdf requires apiKey", async () => {
@@ -224,7 +335,7 @@ describe("native PDF provider API calls", () => {
       }),
     );
 
-    const [url] = fetchMock.mock.calls[0];
+    const [url] = firstFetchCall(fetchMock);
     expect(url).toContain("/v1beta/models/");
     expect(url).not.toContain("/v1beta/v1beta");
   });
@@ -243,7 +354,7 @@ describe("native PDF provider API calls", () => {
       }),
     );
 
-    const [url] = fetchMock.mock.calls[0];
+    const [url] = firstFetchCall(fetchMock);
     expect(url).toContain("https://generativelanguage.googleapis.com/v1beta/models/");
     expect(url).not.toContain("/v1beta/v1beta");
   });

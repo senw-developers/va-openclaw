@@ -1,8 +1,9 @@
+// Token-provider normalization hooks for provider-backed auth choices.
 import { resolveProviderMatch } from "../plugins/provider-auth-choice-helpers.js";
 import { resolvePluginProviders } from "../plugins/provider-auth-choice.runtime.js";
 import type { ProviderAuthKind } from "../plugins/types.js";
 import { normalizeTokenProviderInput } from "./auth-choice.apply-helpers.js";
-import type { ApplyAuthChoiceParams, ApplyAuthChoiceResult } from "./auth-choice.apply.js";
+import type { ApplyAuthChoiceParams, ApplyAuthChoiceResult } from "./auth-choice.apply.types.js";
 import type { AuthChoice } from "./onboard-types.js";
 
 function resolveProviderAuthChoiceByKind(params: {
@@ -25,6 +26,7 @@ function resolveProviderAuthChoiceByKind(params: {
   return choiceId as AuthChoice | undefined;
 }
 
+/** Translate generic api-key/token choices to provider-specific auth choices when possible. */
 export function normalizeApiKeyTokenProviderAuthChoice(params: {
   authChoice: AuthChoice;
   tokenProvider?: string;
@@ -64,6 +66,7 @@ export function normalizeApiKeyTokenProviderAuthChoice(params: {
   );
 }
 
+/** Reserved extension point for historical api-provider auth application flows. */
 export async function applyAuthChoiceApiProviders(
   _params: ApplyAuthChoiceParams,
 ): Promise<ApplyAuthChoiceResult | null> {

@@ -1,20 +1,112 @@
+// Covers approval handler runtime adapter creation and lazy wiring.
 import { describe, expect, it, vi } from "vitest";
 import {
   createChannelApprovalHandlerFromCapability,
   createLazyChannelApprovalNativeRuntimeAdapter,
 } from "./approval-handler-runtime.js";
+import {
+  createApprovalNativeRuntimeAdapterStubs,
+  type ApprovalNativeRuntimeAdapterStubParams,
+} from "./approval-handler.test-helpers.js";
 import type { ExecApprovalRequest } from "./exec-approvals.js";
+
+type ApprovalCapability = NonNullable<
+  Parameters<typeof createChannelApprovalHandlerFromCapability>[0]["capability"]
+>;
+type ApprovalNativeAdapter = NonNullable<ApprovalCapability["native"]>;
+
+const TEST_HANDLER_PARAMS = {
+  label: "test/approval-handler",
+  clientDisplayName: "Test Approval Handler",
+  channel: "test",
+  channelLabel: "Test",
+  cfg: { channels: {} } as never,
+} as const;
+
+function makeSequentialPendingDeliveryMock() {
+  return vi
+    .fn()
+    .mockResolvedValueOnce({ messageId: "1" })
+    .mockResolvedValueOnce({ messageId: "2" });
+}
+
+function makeSequentialPendingBindingMock() {
+  return vi
+    .fn()
+    .mockResolvedValueOnce({ bindingId: "bound-1" })
+    .mockResolvedValueOnce({ bindingId: "bound-2" });
+}
+
+function makeExecApprovalRequest(id: string): ExecApprovalRequest {
+  return {
+    id,
+    expiresAtMs: Date.now() + 60_000,
+    request: {
+      command: "echo hi",
+      turnSourceChannel: "test",
+      turnSourceTo: "origin-chat",
+    },
+    createdAtMs: Date.now(),
+  };
+}
+
+function makeNativeApprovalCapability(
+  params: {
+    preferredSurface?: ReturnType<
+      ApprovalNativeAdapter["describeDeliveryCapabilities"]
+    >["preferredSurface"];
+    supportsApproverDmSurface?: boolean;
+    resolveApproverDmTargets?: ApprovalNativeAdapter["resolveApproverDmTargets"];
+  } & ApprovalNativeRuntimeAdapterStubParams = {},
+): ApprovalCapability {
+  const preferredSurface = params.preferredSurface ?? "origin";
+  return {
+    native: {
+      describeDeliveryCapabilities: vi.fn().mockReturnValue({
+        enabled: true,
+        preferredSurface,
+        supportsOriginSurface: true,
+        supportsApproverDmSurface: params.supportsApproverDmSurface ?? false,
+        notifyOriginWhenDmOnly: false,
+      }),
+      resolveOriginTarget: vi.fn().mockReturnValue({ to: "origin-chat" }),
+      ...(params.resolveApproverDmTargets
+        ? { resolveApproverDmTargets: params.resolveApproverDmTargets }
+        : {}),
+    },
+    nativeRuntime: createApprovalNativeRuntimeAdapterStubs(params),
+  };
+}
+
+function createTestApprovalHandler(capability: ApprovalCapability) {
+  return createChannelApprovalHandlerFromCapability({
+    capability,
+    ...TEST_HANDLER_PARAMS,
+  });
+}
+
+type ApprovalHandlerRuntime = NonNullable<Awaited<ReturnType<typeof createTestApprovalHandler>>>;
+
+function expectApprovalRuntime(
+  runtime: Awaited<ReturnType<typeof createTestApprovalHandler>>,
+): ApprovalHandlerRuntime {
+  if (runtime === null) {
+    throw new Error("Expected approval handler runtime");
+  }
+  expect(typeof runtime.handleRequested).toBe("function");
+  return runtime;
+}
+
+function firstCallArg(mock: ReturnType<typeof vi.fn>): unknown {
+  return mock.mock.calls[0]?.[0];
+}
 
 describe("createChannelApprovalHandlerFromCapability", () => {
   it("returns null when the capability does not expose a native runtime", async () => {
     await expect(
       createChannelApprovalHandlerFromCapability({
         capability: {},
-        label: "test/approval-handler",
-        clientDisplayName: "Test Approval Handler",
-        channel: "test",
-        channelLabel: "Test",
-        cfg: {} as never,
+        ...TEST_HANDLER_PARAMS,
       }),
     ).resolves.toBeNull();
   });
@@ -38,62 +130,22 @@ describe("createChannelApprovalHandlerFromCapability", () => {
           },
         },
       },
-      label: "test/approval-handler",
-      clientDisplayName: "Test Approval Handler",
-      channel: "test",
-      channelLabel: "Test",
-      cfg: { channels: {} } as never,
+      ...TEST_HANDLER_PARAMS,
     });
 
-    expect(runtime).not.toBeNull();
+    expectApprovalRuntime(runtime);
   });
 
   it("preserves the original request and resolved approval kind when stop-time cleanup unbinds", async () => {
     const unbindPending = vi.fn();
-    const runtime = await createChannelApprovalHandlerFromCapability({
-      capability: {
-        native: {
-          describeDeliveryCapabilities: vi.fn().mockReturnValue({
-            enabled: true,
-            preferredSurface: "origin",
-            supportsOriginSurface: true,
-            supportsApproverDmSurface: false,
-            notifyOriginWhenDmOnly: false,
-          }),
-          resolveOriginTarget: vi.fn().mockReturnValue({ to: "origin-chat" }),
-        },
-        nativeRuntime: {
-          resolveApprovalKind: vi.fn().mockReturnValue("plugin"),
-          availability: {
-            isConfigured: vi.fn().mockReturnValue(true),
-            shouldHandle: vi.fn().mockReturnValue(true),
-          },
-          presentation: {
-            buildPendingPayload: vi.fn().mockResolvedValue({ text: "pending" }),
-            buildResolvedResult: vi.fn(),
-            buildExpiredResult: vi.fn(),
-          },
-          transport: {
-            prepareTarget: vi.fn().mockResolvedValue({
-              dedupeKey: "origin-chat",
-              target: { to: "origin-chat" },
-            }),
-            deliverPending: vi.fn().mockResolvedValue({ messageId: "1" }),
-          },
-          interactions: {
-            bindPending: vi.fn().mockResolvedValue({ bindingId: "bound" }),
-            unbindPending,
-          },
-        },
-      },
-      label: "test/approval-handler",
-      clientDisplayName: "Test Approval Handler",
-      channel: "test",
-      channelLabel: "Test",
-      cfg: { channels: {} } as never,
-    });
+    const runtime = await createTestApprovalHandler(
+      makeNativeApprovalCapability({
+        resolveApprovalKind: vi.fn().mockReturnValue("plugin"),
+        unbindPending,
+      }),
+    );
 
-    expect(runtime).not.toBeNull();
+    const approvalRuntime = expectApprovalRuntime(runtime);
     const request = {
       id: "custom:1",
       expiresAtMs: Date.now() + 60_000,
@@ -103,95 +155,47 @@ describe("createChannelApprovalHandlerFromCapability", () => {
       },
     } as never;
 
-    await runtime?.handleRequested(request);
-    await runtime?.stop();
+    await approvalRuntime.handleRequested(request);
+    await approvalRuntime.stop();
 
-    expect(unbindPending).toHaveBeenCalledWith(
-      expect.objectContaining({
-        request,
-        approvalKind: "plugin",
-      }),
-    );
+    expect(unbindPending).toHaveBeenCalledOnce();
+    const stopUnbind = firstCallArg(unbindPending) as
+      | { request?: unknown; approvalKind?: string }
+      | undefined;
+    expect(stopUnbind?.request).toBe(request);
+    expect(stopUnbind?.approvalKind).toBe("plugin");
   });
 
   it("ignores duplicate pending request ids before finalization", async () => {
     const unbindPending = vi.fn();
     const buildResolvedResult = vi.fn().mockResolvedValue({ kind: "leave" });
-    const runtime = await createChannelApprovalHandlerFromCapability({
-      capability: {
-        native: {
-          describeDeliveryCapabilities: vi.fn().mockReturnValue({
-            enabled: true,
-            preferredSurface: "origin",
-            supportsOriginSurface: true,
-            supportsApproverDmSurface: false,
-            notifyOriginWhenDmOnly: false,
-          }),
-          resolveOriginTarget: vi.fn().mockReturnValue({ to: "origin-chat" }),
-        },
-        nativeRuntime: {
-          availability: {
-            isConfigured: vi.fn().mockReturnValue(true),
-            shouldHandle: vi.fn().mockReturnValue(true),
-          },
-          presentation: {
-            buildPendingPayload: vi.fn().mockResolvedValue({ text: "pending" }),
-            buildResolvedResult,
-            buildExpiredResult: vi.fn(),
-          },
-          transport: {
-            prepareTarget: vi.fn().mockResolvedValue({
-              dedupeKey: "origin-chat",
-              target: { to: "origin-chat" },
-            }),
-            deliverPending: vi
-              .fn()
-              .mockResolvedValueOnce({ messageId: "1" })
-              .mockResolvedValueOnce({ messageId: "2" }),
-          },
-          interactions: {
-            bindPending: vi
-              .fn()
-              .mockResolvedValueOnce({ bindingId: "bound-1" })
-              .mockResolvedValueOnce({ bindingId: "bound-2" }),
-            unbindPending,
-          },
-        },
-      },
-      label: "test/approval-handler",
-      clientDisplayName: "Test Approval Handler",
-      channel: "test",
-      channelLabel: "Test",
-      cfg: { channels: {} } as never,
-    });
+    const runtime = await createTestApprovalHandler(
+      makeNativeApprovalCapability({
+        buildResolvedResult,
+        deliverPending: makeSequentialPendingDeliveryMock(),
+        bindPending: makeSequentialPendingBindingMock(),
+        unbindPending,
+      }),
+    );
 
-    expect(runtime).not.toBeNull();
-    const request = {
-      id: "exec:1",
-      expiresAtMs: Date.now() + 60_000,
-      request: {
-        command: "echo hi",
-        turnSourceChannel: "test",
-        turnSourceTo: "origin-chat",
-      },
-    } as never;
+    const approvalRuntime = expectApprovalRuntime(runtime);
+    const request = makeExecApprovalRequest("exec:1");
 
-    await runtime?.handleRequested(request);
-    await runtime?.handleRequested(request);
-    await runtime?.handleResolved({
+    await approvalRuntime.handleRequested(request);
+    await approvalRuntime.handleRequested(request);
+    await approvalRuntime.handleResolved({
       id: "exec:1",
       decision: "approved",
       resolvedBy: "operator",
     } as never);
 
     expect(unbindPending).toHaveBeenCalledTimes(1);
-    expect(unbindPending).toHaveBeenCalledWith(
-      expect.objectContaining({
-        entry: { messageId: "1" },
-        binding: { bindingId: "bound-1" },
-        request,
-      }),
-    );
+    const unbind = firstCallArg(unbindPending) as
+      | { entry?: unknown; binding?: unknown; request?: unknown }
+      | undefined;
+    expect(unbind?.entry).toEqual({ messageId: "1" });
+    expect(unbind?.binding).toEqual({ bindingId: "bound-1" });
+    expect(unbind?.request).toBe(request);
     expect(buildResolvedResult).toHaveBeenCalledTimes(1);
   });
 
@@ -201,68 +205,28 @@ describe("createChannelApprovalHandlerFromCapability", () => {
       .mockRejectedValueOnce(new Error("unbind failed"))
       .mockResolvedValueOnce(undefined);
     const buildResolvedResult = vi.fn().mockResolvedValue({ kind: "leave" });
-    const runtime = await createChannelApprovalHandlerFromCapability({
-      capability: {
-        native: {
-          describeDeliveryCapabilities: vi.fn().mockReturnValue({
-            enabled: true,
-            preferredSurface: "both",
-            supportsOriginSurface: true,
-            supportsApproverDmSurface: true,
-            notifyOriginWhenDmOnly: false,
-          }),
-          resolveOriginTarget: vi.fn().mockReturnValue({ to: "origin-chat" }),
-          resolveApproverDmTargets: vi.fn().mockResolvedValue([{ to: "approver-dm" }]),
-        },
-        nativeRuntime: {
-          availability: {
-            isConfigured: vi.fn().mockReturnValue(true),
-            shouldHandle: vi.fn().mockReturnValue(true),
-          },
-          presentation: {
-            buildPendingPayload: vi.fn().mockResolvedValue({ text: "pending" }),
-            buildResolvedResult,
-            buildExpiredResult: vi.fn(),
-          },
-          transport: {
-            prepareTarget: vi.fn().mockImplementation(async ({ plannedTarget }) => ({
-              dedupeKey: String(plannedTarget.target.to),
-              target: { to: plannedTarget.target.to },
-            })),
-            deliverPending: vi
-              .fn()
-              .mockResolvedValueOnce({ messageId: "1" })
-              .mockResolvedValueOnce({ messageId: "2" }),
-          },
-          interactions: {
-            bindPending: vi
-              .fn()
-              .mockResolvedValueOnce({ bindingId: "bound-1" })
-              .mockResolvedValueOnce({ bindingId: "bound-2" }),
-            unbindPending,
-          },
-        },
-      },
-      label: "test/approval-handler",
-      clientDisplayName: "Test Approval Handler",
-      channel: "test",
-      channelLabel: "Test",
-      cfg: { channels: {} } as never,
-    });
+    const runtime = await createTestApprovalHandler(
+      makeNativeApprovalCapability({
+        preferredSurface: "both",
+        supportsApproverDmSurface: true,
+        resolveApproverDmTargets: vi.fn().mockResolvedValue([{ to: "approver-dm" }]),
+        buildResolvedResult,
+        prepareTarget: vi.fn().mockImplementation(async ({ plannedTarget }) => ({
+          dedupeKey: String(plannedTarget.target.to),
+          target: { to: plannedTarget.target.to },
+        })),
+        deliverPending: makeSequentialPendingDeliveryMock(),
+        bindPending: makeSequentialPendingBindingMock(),
+        unbindPending,
+      }),
+    );
 
-    const request = {
-      id: "exec:2",
-      expiresAtMs: Date.now() + 60_000,
-      request: {
-        command: "echo hi",
-        turnSourceChannel: "test",
-        turnSourceTo: "origin-chat",
-      },
-    } as never;
+    const request = makeExecApprovalRequest("exec:2");
 
-    await runtime?.handleRequested(request);
+    const approvalRuntime = expectApprovalRuntime(runtime);
+    await approvalRuntime.handleRequested(request);
     await expect(
-      runtime?.handleResolved({
+      approvalRuntime.handleResolved({
         id: "exec:2",
         decision: "approved",
         resolvedBy: "operator",
@@ -271,11 +235,8 @@ describe("createChannelApprovalHandlerFromCapability", () => {
 
     expect(unbindPending).toHaveBeenCalledTimes(2);
     expect(buildResolvedResult).toHaveBeenCalledTimes(1);
-    expect(buildResolvedResult).toHaveBeenCalledWith(
-      expect.objectContaining({
-        entry: { messageId: "2" },
-      }),
-    );
+    const resolvedPayload = firstCallArg(buildResolvedResult) as { entry?: unknown } | undefined;
+    expect(resolvedPayload?.entry).toEqual({ messageId: "2" });
   });
 
   it("continues stop-time unbind cleanup when one binding throws", async () => {
@@ -283,74 +244,26 @@ describe("createChannelApprovalHandlerFromCapability", () => {
       .fn()
       .mockRejectedValueOnce(new Error("unbind failed"))
       .mockResolvedValueOnce(undefined);
-    const runtime = await createChannelApprovalHandlerFromCapability({
-      capability: {
-        native: {
-          describeDeliveryCapabilities: vi.fn().mockReturnValue({
-            enabled: true,
-            preferredSurface: "origin",
-            supportsOriginSurface: true,
-            supportsApproverDmSurface: false,
-            notifyOriginWhenDmOnly: false,
-          }),
-          resolveOriginTarget: vi.fn().mockReturnValue({ to: "origin-chat" }),
-        },
-        nativeRuntime: {
-          availability: {
-            isConfigured: vi.fn().mockReturnValue(true),
-            shouldHandle: vi.fn().mockReturnValue(true),
-          },
-          presentation: {
-            buildPendingPayload: vi.fn().mockResolvedValue({ text: "pending" }),
-            buildResolvedResult: vi.fn(),
-            buildExpiredResult: vi.fn(),
-          },
-          transport: {
-            prepareTarget: vi.fn().mockResolvedValue({
-              dedupeKey: "origin-chat",
-              target: { to: "origin-chat" },
-            }),
-            deliverPending: vi
-              .fn()
-              .mockResolvedValueOnce({ messageId: "1" })
-              .mockResolvedValueOnce({ messageId: "2" }),
-          },
-          interactions: {
-            bindPending: vi
-              .fn()
-              .mockResolvedValueOnce({ bindingId: "bound-1" })
-              .mockResolvedValueOnce({ bindingId: "bound-2" }),
-            unbindPending,
-          },
-        },
-      },
-      label: "test/approval-handler",
-      clientDisplayName: "Test Approval Handler",
-      channel: "test",
-      channelLabel: "Test",
-      cfg: { channels: {} } as never,
-    });
+    const runtime = await createTestApprovalHandler(
+      makeNativeApprovalCapability({
+        deliverPending: makeSequentialPendingDeliveryMock(),
+        bindPending: makeSequentialPendingBindingMock(),
+        unbindPending,
+      }),
+    );
 
-    const request: ExecApprovalRequest = {
-      id: "exec:stop-1",
-      expiresAtMs: Date.now() + 60_000,
-      request: {
-        command: "echo hi",
-        turnSourceChannel: "test",
-        turnSourceTo: "origin-chat",
-      },
-      createdAtMs: Date.now(),
-    };
+    const request = makeExecApprovalRequest("exec:stop-1");
 
-    await runtime?.handleRequested(request);
-    await runtime?.handleRequested({
+    const approvalRuntime = expectApprovalRuntime(runtime);
+    await approvalRuntime.handleRequested(request);
+    await approvalRuntime.handleRequested({
       ...request,
       id: "exec:stop-2",
     });
 
-    await expect(runtime?.stop()).resolves.toBeUndefined();
+    await expect(approvalRuntime.stop()).resolves.toBeUndefined();
     expect(unbindPending).toHaveBeenCalledTimes(2);
-    await expect(runtime?.stop()).resolves.toBeUndefined();
+    await expect(approvalRuntime.stop()).resolves.toBeUndefined();
     expect(unbindPending).toHaveBeenCalledTimes(2);
   });
 });
@@ -451,5 +364,151 @@ describe("createLazyChannelApprovalNativeRuntimeAdapter", () => {
     adapter.observe?.onDelivered?.({ request: { id: "exec:1" } } as never);
     expect(onDelivered).toHaveBeenCalledWith({ request: { id: "exec:1" } });
     expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it("unbinds in-flight wrapped entry when stop() fires between bindPending and activeEntries.set", async () => {
+    const bindGate = { resolve: () => {}, promise: Promise.resolve() };
+    const bindPromise = new Promise<void>((resolve) => {
+      bindGate.resolve = resolve;
+    });
+    bindGate.promise = bindPromise;
+    const deliverPending = vi.fn().mockResolvedValue({ messageId: "in-flight" });
+    const bindPending = vi.fn(async () => {
+      await bindPromise;
+      return { bindingId: "bound-in-flight" };
+    });
+    const unbindPending = vi.fn();
+
+    const runtime = await createTestApprovalHandler(
+      makeNativeApprovalCapability({
+        deliverPending,
+        bindPending,
+        unbindPending,
+      }),
+    );
+    const approvalRuntime = expectApprovalRuntime(runtime);
+    const request = makeExecApprovalRequest("exec:in-flight");
+
+    const inflight = approvalRuntime.handleRequested(request);
+    // Flush microtasks so deliverPending resolves and bindPending parks at the gate.
+    await new Promise((r) => {
+      setTimeout(r, 0);
+    });
+    await new Promise((r) => {
+      setTimeout(r, 0);
+    });
+
+    // stop() flips the stopped flag while bindPending is parked.
+    await approvalRuntime.stop();
+    bindGate.resolve();
+    await inflight;
+
+    expect(unbindPending).toHaveBeenCalledTimes(1);
+    const unbind = firstCallArg(unbindPending) as
+      | { entry?: unknown; binding?: unknown; request?: unknown }
+      | undefined;
+    expect(unbind?.entry).toEqual({ messageId: "in-flight" });
+    expect(unbind?.binding).toEqual({ bindingId: "bound-in-flight" });
+    expect(unbind?.request).toBe(request);
+  });
+
+  it("invokes cancelDelivered when stop() fires between deliverPending and bindPending", async () => {
+    const deliverGate = { resolve: () => {}, promise: Promise.resolve() };
+    const deliverPromise = new Promise<void>((resolve) => {
+      deliverGate.resolve = resolve;
+    });
+    deliverGate.promise = deliverPromise;
+    const deliveredEntry = { messageId: "pre-bind" };
+    const deliverPending = vi.fn(async () => {
+      await deliverPromise;
+      return deliveredEntry;
+    });
+    const bindPending = vi.fn().mockResolvedValue({ bindingId: "should-not-bind" });
+    const unbindPending = vi.fn();
+    const cancelDelivered = vi.fn();
+
+    const runtime = await createTestApprovalHandler(
+      makeNativeApprovalCapability({
+        deliverPending,
+        bindPending,
+        unbindPending,
+        cancelDelivered,
+      }),
+    );
+    const approvalRuntime = expectApprovalRuntime(runtime);
+    const request = makeExecApprovalRequest("exec:pre-bind");
+
+    const inflight = approvalRuntime.handleRequested(request);
+    // Flush microtasks so deliverPending is awaited and parked at the gate.
+    await new Promise((r) => {
+      setTimeout(r, 0);
+    });
+    await new Promise((r) => {
+      setTimeout(r, 0);
+    });
+
+    // stop() flips the stopped flag while deliverPending is still pending.
+    await approvalRuntime.stop();
+    deliverGate.resolve();
+    await inflight;
+
+    expect(bindPending).not.toHaveBeenCalled();
+    expect(unbindPending).not.toHaveBeenCalled();
+    expect(cancelDelivered).toHaveBeenCalledTimes(1);
+    const cancel = firstCallArg(cancelDelivered) as
+      | { entry?: unknown; request?: unknown; approvalKind?: string }
+      | undefined;
+    expect(cancel?.entry).toBe(deliveredEntry);
+    expect(cancel?.request).toBe(request);
+    expect(cancel?.approvalKind).toBe("exec");
+  });
+
+  it("invokes cancelDelivered when stop() fires after bindPending returned null", async () => {
+    const bindGate = { resolve: () => {}, promise: Promise.resolve() };
+    const bindPromise = new Promise<void>((resolve) => {
+      bindGate.resolve = resolve;
+    });
+    bindGate.promise = bindPromise;
+    const deliveredEntry = { messageId: "post-bind-null" };
+    const deliverPending = vi.fn().mockResolvedValue(deliveredEntry);
+    const bindPending = vi.fn(async () => {
+      await bindPromise;
+      return null;
+    });
+    const unbindPending = vi.fn();
+    const cancelDelivered = vi.fn();
+
+    const runtime = await createTestApprovalHandler(
+      makeNativeApprovalCapability({
+        deliverPending,
+        bindPending,
+        unbindPending,
+        cancelDelivered,
+      }),
+    );
+    const approvalRuntime = expectApprovalRuntime(runtime);
+    const request = makeExecApprovalRequest("exec:post-bind-null");
+
+    const inflight = approvalRuntime.handleRequested(request);
+    // Flush microtasks so deliverPending resolves and bindPending awaits the gate.
+    await new Promise((r) => {
+      setTimeout(r, 0);
+    });
+    await new Promise((r) => {
+      setTimeout(r, 0);
+    });
+
+    // stop() flips the stopped flag while bindPending is parked; it then resolves to null.
+    await approvalRuntime.stop();
+    bindGate.resolve();
+    await inflight;
+
+    expect(unbindPending).not.toHaveBeenCalled();
+    expect(cancelDelivered).toHaveBeenCalledTimes(1);
+    const cancel = firstCallArg(cancelDelivered) as
+      | { entry?: unknown; request?: unknown }
+      | undefined;
+    expect(cancel?.entry).toBe(deliveredEntry);
+    expect(cancel?.request).toBe(request);
   });
 });

@@ -1,22 +1,30 @@
+// Filters host environment variables before passing them to runtimes.
+import { sortUniqueStrings } from "@openclaw/normalization-core/string-normalization";
 import { HOST_ENV_SECURITY_POLICY } from "./host-env-security-policy.js";
 import { markOpenClawExecEnv } from "./openclaw-exec-env.js";
 
 const PORTABLE_ENV_VAR_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const WINDOWS_COMPAT_OVERRIDE_ENV_VAR_KEY = /^[A-Za-z_][A-Za-z0-9_()]*$/;
 
-export const HOST_DANGEROUS_ENV_KEY_VALUES: readonly string[] = Object.freeze([
+const HOST_DANGEROUS_ENV_KEY_VALUES: readonly string[] = Object.freeze([
   ...HOST_ENV_SECURITY_POLICY.blockedKeys,
 ]);
-export const HOST_DANGEROUS_ENV_PREFIXES: readonly string[] = Object.freeze([
+const HOST_DANGEROUS_ENV_PREFIXES: readonly string[] = Object.freeze([
   ...HOST_ENV_SECURITY_POLICY.blockedPrefixes,
 ]);
-export const HOST_DANGEROUS_OVERRIDE_ENV_KEY_VALUES: readonly string[] = Object.freeze([
+const HOST_DANGEROUS_INHERITED_ENV_KEY_VALUES: readonly string[] = Object.freeze([
+  ...HOST_ENV_SECURITY_POLICY.blockedInheritedKeys,
+]);
+const HOST_DANGEROUS_INHERITED_ENV_PREFIXES: readonly string[] = Object.freeze([
+  ...HOST_ENV_SECURITY_POLICY.blockedInheritedPrefixes,
+]);
+const HOST_DANGEROUS_OVERRIDE_ENV_KEY_VALUES: readonly string[] = Object.freeze([
   ...HOST_ENV_SECURITY_POLICY.blockedOverrideKeys,
 ]);
-export const HOST_DANGEROUS_OVERRIDE_ENV_PREFIXES: readonly string[] = Object.freeze([
+const HOST_DANGEROUS_OVERRIDE_ENV_PREFIXES: readonly string[] = Object.freeze([
   ...HOST_ENV_SECURITY_POLICY.blockedOverridePrefixes,
 ]);
-export const HOST_SHELL_WRAPPER_ALLOWED_OVERRIDE_ENV_KEY_VALUES: readonly string[] = Object.freeze([
+const HOST_SHELL_WRAPPER_ALLOWED_OVERRIDE_ENV_KEY_VALUES: readonly string[] = Object.freeze([
   "TERM",
   "LANG",
   "LC_ALL",
@@ -26,21 +34,37 @@ export const HOST_SHELL_WRAPPER_ALLOWED_OVERRIDE_ENV_KEY_VALUES: readonly string
   "NO_COLOR",
   "FORCE_COLOR",
 ]);
-export const HOST_DANGEROUS_ENV_KEYS = new Set<string>(HOST_DANGEROUS_ENV_KEY_VALUES);
-export const HOST_DANGEROUS_OVERRIDE_ENV_KEYS = new Set<string>(
-  HOST_DANGEROUS_OVERRIDE_ENV_KEY_VALUES,
-);
-export const HOST_SHELL_WRAPPER_ALLOWED_OVERRIDE_ENV_KEYS = new Set<string>(
+const HOST_SHELL_WRAPPER_ALLOWED_OVERRIDE_ENV_PREFIX_VALUES: readonly string[] = Object.freeze([
+  "LC_",
+]);
+const HOST_DANGEROUS_ENV_KEYS = new Set<string>(HOST_DANGEROUS_ENV_KEY_VALUES);
+const HOST_DANGEROUS_INHERITED_ENV_KEYS = new Set<string>(HOST_DANGEROUS_INHERITED_ENV_KEY_VALUES);
+const HOST_DANGEROUS_OVERRIDE_ENV_KEYS = new Set<string>(HOST_DANGEROUS_OVERRIDE_ENV_KEY_VALUES);
+const HOST_SHELL_WRAPPER_ALLOWED_OVERRIDE_ENV_KEYS = new Set<string>(
   HOST_SHELL_WRAPPER_ALLOWED_OVERRIDE_ENV_KEY_VALUES,
 );
 
-export type HostExecEnvSanitizationResult = {
+function isShellWrapperAllowedOverrideEnvVarName(rawKey: string): boolean {
+  const key = normalizeEnvVarKey(rawKey, { portable: true });
+  if (!key) {
+    return false;
+  }
+  const upper = key.toUpperCase();
+  if (HOST_SHELL_WRAPPER_ALLOWED_OVERRIDE_ENV_KEYS.has(upper)) {
+    return true;
+  }
+  return HOST_SHELL_WRAPPER_ALLOWED_OVERRIDE_ENV_PREFIX_VALUES.some((prefix) =>
+    upper.startsWith(prefix),
+  );
+}
+
+type HostExecEnvSanitizationResult = {
   env: Record<string, string>;
   rejectedOverrideBlockedKeys: string[];
   rejectedOverrideInvalidKeys: string[];
 };
 
-export type HostExecEnvOverrideDiagnostics = {
+type HostExecEnvOverrideDiagnostics = {
   rejectedOverrideBlockedKeys: string[];
   rejectedOverrideInvalidKeys: string[];
 };
@@ -82,6 +106,18 @@ export function isDangerousHostEnvVarName(rawKey: string): boolean {
   return HOST_DANGEROUS_ENV_PREFIXES.some((prefix) => upper.startsWith(prefix));
 }
 
+export function isDangerousHostInheritedEnvVarName(rawKey: string): boolean {
+  const key = normalizeEnvVarKey(rawKey);
+  if (!key) {
+    return false;
+  }
+  const upper = key.toUpperCase();
+  if (HOST_DANGEROUS_INHERITED_ENV_KEYS.has(upper)) {
+    return true;
+  }
+  return HOST_DANGEROUS_INHERITED_ENV_PREFIXES.some((prefix) => upper.startsWith(prefix));
+}
+
 export function isDangerousHostEnvOverrideVarName(rawKey: string): boolean {
   const key = normalizeEnvVarKey(rawKey);
   if (!key) {
@@ -110,10 +146,6 @@ function listNormalizedEnvEntries(
     entries.push([key, value]);
   }
   return entries;
-}
-
-function sortUnique(values: Iterable<string>): string[] {
-  return Array.from(new Set(values)).toSorted((a, b) => a.localeCompare(b));
 }
 
 function sanitizeHostEnvOverridesWithDiagnostics(params?: {
@@ -164,8 +196,8 @@ function sanitizeHostEnvOverridesWithDiagnostics(params?: {
 
   return {
     acceptedOverrides,
-    rejectedOverrideBlockedKeys: sortUnique(rejectedBlocked),
-    rejectedOverrideInvalidKeys: sortUnique(rejectedInvalid),
+    rejectedOverrideBlockedKeys: sortUniqueStrings(rejectedBlocked),
+    rejectedOverrideInvalidKeys: sortUniqueStrings(rejectedInvalid),
   };
 }
 
@@ -178,7 +210,7 @@ export function sanitizeHostExecEnvWithDiagnostics(params?: {
 
   const merged: Record<string, string> = {};
   for (const [key, value] of listNormalizedEnvEntries(baseEnv)) {
-    if (isDangerousHostEnvVarName(key)) {
+    if (isDangerousHostInheritedEnvVarName(key)) {
       continue;
     }
     merged[key] = value;
@@ -233,7 +265,7 @@ export function sanitizeSystemRunEnvOverrides(params?: {
   }
   const filtered: Record<string, string> = {};
   for (const [key, value] of listNormalizedEnvEntries(overrides, { portable: true })) {
-    if (!HOST_SHELL_WRAPPER_ALLOWED_OVERRIDE_ENV_KEYS.has(key.toUpperCase())) {
+    if (!isShellWrapperAllowedOverrideEnvVarName(key)) {
       continue;
     }
     filtered[key] = value;

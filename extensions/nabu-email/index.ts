@@ -1,5 +1,5 @@
 import * as http from "http";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { definePluginEntry, type OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
 
 // ---------------------------------------------------------------------------

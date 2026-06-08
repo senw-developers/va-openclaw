@@ -1,9 +1,9 @@
-import fs from "node:fs/promises";
-import path from "node:path";
+// Delivery awareness tests cover isolated agent knowledge of cron delivery targets.
 import "./isolated-agent.mocks.js";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { CliDeps } from "../cli/deps.js";
 import { resolveDefaultSessionStorePath } from "../config/sessions.js";
+import { writeSessionStoreForTestAsync } from "../config/sessions/test-helpers.js";
 import { peekSystemEvents, resetSystemEventsForTest } from "../infra/system-events.js";
 import { createCliDeps, mockAgentPayloads } from "./isolated-agent.delivery.test-helpers.js";
 import { runCronIsolatedAgentTurn } from "./isolated-agent.js";
@@ -15,8 +15,7 @@ async function writeDefaultAgentSessionStoreEntries(
   entries: Record<string, Record<string, unknown>>,
 ): Promise<string> {
   const storePath = resolveDefaultSessionStorePath("main");
-  await fs.mkdir(path.dirname(storePath), { recursive: true });
-  await fs.writeFile(storePath, JSON.stringify(entries, null, 2), "utf-8");
+  await writeSessionStoreForTestAsync(storePath, entries);
   return storePath;
 }
 
@@ -102,6 +101,37 @@ describe("runCronIsolatedAgentTurn cron delivery awareness", () => {
       expect(result.status).toBe("ok");
       expect(result.delivered).toBe(true);
       expect(peekSystemEvents("global")).toEqual(["global cron digest"]);
+    });
+  });
+
+  it("does not queue main-session awareness for implicit last-target delivery", async () => {
+    await withTempCronHome(async (home) => {
+      const storePath = await writeDefaultAgentSessionStoreEntries({
+        "agent:main:main": {
+          sessionId: "main-session",
+          updatedAt: Date.now(),
+          lastProvider: "telegram",
+          lastChannel: "telegram",
+          lastTo: "123",
+        },
+      });
+      const deps = createCliDeps();
+      mockAgentPayloads([{ text: "implicit cron digest" }]);
+
+      const result = await runAnnounceTurn({
+        home,
+        storePath,
+        sessionKey: "cron:job-1",
+        deps,
+        delivery: {
+          mode: "announce",
+          channel: "last",
+        },
+      });
+
+      expect(result.status).toBe("ok");
+      expect(result.delivered).toBe(true);
+      expect(peekSystemEvents("agent:main:main")).toStrictEqual([]);
     });
   });
 });
