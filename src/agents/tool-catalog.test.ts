@@ -52,6 +52,7 @@ describe("tool-catalog", () => {
       "skill_workshop",
       "image",
       "image_generate",
+      "deliver",
       "music_generate",
       "video_generate",
       "bundle-mcp",
