@@ -1,6 +1,8 @@
 node_modules
 **/node_modules/
-/.env
+# Unanchored on purpose: `/.env` only covered the repo root, which is how
+# nabu-integration/spawn-seed/.env got committed with live values (G4 incident).
+.env
 docker-compose.override.yml
 docker-compose.extra.yml
 docker-compose.sandbox.yml
@@ -217,8 +219,17 @@ ui/src/ui/__screenshots__
 ui/src/ui/views/__screenshots__
 ui/.vitest-attachments
 
-# Allow instance configurations to be committed
+# Instance configurations are local-only; never commit tenant state.
 nabu-integration/instances/
+
+# Spawn-seed credential/state files are local-only (G4): auth material, device
+# identity, and generated artifacts. Committed once pre-2026-08; those values
+# are burned — rotate, never re-track.
+nabu-integration/spawn-seed/.openclaw/agents/
+nabu-integration/spawn-seed/.openclaw/identity/
+nabu-integration/spawn-seed/.openclaw/logs/
+nabu-integration/spawn-seed/.openclaw/update-check.json
+nabu-integration/spawn-seed/.openclaw/completions/
 
 # Generated docs baseline artifacts (locally generated, only hashes tracked)
 docs/.generated/*.json

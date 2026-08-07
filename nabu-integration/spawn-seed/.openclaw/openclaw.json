@@ -195,7 +195,7 @@
     },
     "auth": {
       "mode": "token",
-      "token": "a4869bc14022daf1d10226467efaa570b447e93869b11b2b0196887be0188b6e"
+      "token": "${OPENCLAW_GATEWAY_TOKEN}"
     },
     "tailscale": {
       "mode": "off",
