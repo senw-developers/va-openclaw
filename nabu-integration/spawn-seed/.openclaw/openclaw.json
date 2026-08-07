@@ -15,10 +15,9 @@
         "provider": "cloudflare-ai-gateway",
         "mode": "api_key"
       },
-      "openai-codex:dev2@senw.io": {
-        "provider": "openai-codex",
-        "mode": "oauth",
-        "email": "dev2@senw.io"
+      "openai:default": {
+        "provider": "openai",
+        "mode": "oauth"
       },
       "minimax:global": {
         "provider": "minimax",
@@ -137,7 +136,7 @@
         "every": "0m"
       },
       "model": {
-        "primary": "openai-codex/gpt-5.4"
+        "primary": "openai/gpt-5.5"
       },
       "imageGenerationModel": {
         "primary": "minimax/image-01"
@@ -155,7 +154,11 @@
         "cloudflare-ai-gateway/claude-opus-4-6": {
           "alias": "Opus 4.6"
         },
-        "openai-codex/gpt-5.4": {},
+        "openai/gpt-5.5": {
+          "agentRuntime": {
+            "id": "openclaw"
+          }
+        },
         "minimax/MiniMax-M2.7": {
           "alias": "Minimax"
         }
@@ -168,7 +171,7 @@
   },
   "tools": {
     "profile": "coding",
-    "alsoAllow": ["nabu-email", "nabu-google-workspace", "browser"],
+    "alsoAllow": ["nabu-email", "nabu-google-workspace", "nabu-1password", "browser"],
     "web": {
       "search": {
         "enabled": true,
@@ -230,9 +233,11 @@
       "nabu-model-router",
       "nabu-1password",
       "nabu-files",
+      "nabu-media-upload",
       "nabu-google-workspace",
       "browser",
       "minimax",
+      "openai",
       "duckduckgo",
       "whatsapp",
       "slack",
@@ -276,9 +281,19 @@
       "nabu-1password": {
         "enabled": false,
         "config": {
-          "apiToken": "",
+          "apiToken": {
+            "source": "env",
+            "provider": "default",
+            "id": "NABU_ONE_PASSWORD_SKILL_TOKEN"
+          },
           "apiBaseUrl": "http://app:6001"
         }
+      },
+      "nabu-media-upload": {
+        "enabled": true
+      },
+      "openai": {
+        "enabled": true
       },
       "nabu-files": {
         "enabled": false,

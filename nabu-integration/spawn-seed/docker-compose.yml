@@ -11,6 +11,9 @@ services:
       CLOUDFLARE_AI_GATEWAY_API_KEY: ${CLOUDFLARE_AI_GATEWAY_API_KEY:-}
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
       NABU_FILES_SKILL_TOKEN: ${NABU_FILES_SKILL_TOKEN:-}
+      NABU_EMAIL_SKILL_TOKEN: ${NABU_EMAIL_SKILL_TOKEN:-}
+      NABU_GOOGLE_WORKSPACE_SKILL_TOKEN: ${NABU_GOOGLE_WORKSPACE_SKILL_TOKEN:-}
+      NABU_ONE_PASSWORD_SKILL_TOKEN: ${NABU_ONE_PASSWORD_SKILL_TOKEN:-}
       CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY:-}
       CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY:-}
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
@@ -18,6 +21,9 @@ services:
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
+      # Auth-profile secrets persist outside the config dir (root
+      # docker-compose.yml pattern) so re-provisioning keeps OAuth material.
+      - ${OPENCLAW_AUTH_PROFILE_SECRET_DIR:-${OPENCLAW_CONFIG_DIR}-auth-profile-secrets}:/home/node/.config/openclaw
       ## Uncomment the lines below to enable sandbox isolation
       ## (agents.defaults.sandbox). Requires Docker CLI in the image
       ## (build with --build-arg OPENCLAW_INSTALL_DOCKER_CLI=1) or use
@@ -64,6 +70,9 @@ services:
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
+      # Same auth-profile secret store as the gateway service — CLI auth flows
+      # (onboard/models auth) must write where the gateway reads.
+      - ${OPENCLAW_AUTH_PROFILE_SECRET_DIR:-${OPENCLAW_CONFIG_DIR}-auth-profile-secrets}:/home/node/.config/openclaw
     stdin_open: true
     tty: true
     init: true
