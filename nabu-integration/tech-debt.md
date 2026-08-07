@@ -81,6 +81,26 @@ compose hardens both services). The resynced docker-setup.sh guards the
 missing pieces; close by resyncing the seed compose from root
 `docker-compose.yml` the same way #14 resynced the setup script.
 
+### F-4 — skill-token resolver duplicated ×4; platform seam exists
+
+`resolveApiTokenInput` is byte-identical in nabu-files, nabu-1password,
+nabu-google-workspace, and nabu-email (env-source only; file/exec refs
+degrade to ""). Core already offers the native seam: declare
+`configContracts.secretInputs` paths in the manifests and core resolves refs
+centrally (`src/secrets/runtime-config-collectors-plugins.ts`) with
+config.patch refresh — the local copies then delete. Migrate all four in one
+change with its own gates; do not patch copies individually.
+
+### F-5 — seed lacks explicit `plugins.bundledDiscovery`
+
+Core's invalid-config hint calls bare `plugins.allow` a legacy key and
+suggests `plugins.bundledDiscovery`. Seed validates clean and all plugins
+load, but tenants see the hint whenever any config error surfaces. Pin the
+intended mode (likely `"allowlist"`) after verifying the enum semantics
+against `src/plugins/config-activation-shared.ts`. Related: nabu-model-router
+deliberately has no package.json (T10/#34), so the plugin-inventory generator
+skips it — intentional exclusion, do not "fix" by adding one.
+
 ### F-3 — G6 validator dormant
 
 `nabu-integration/scripts/validate-channel-isolation.mjs` carries the pin's
