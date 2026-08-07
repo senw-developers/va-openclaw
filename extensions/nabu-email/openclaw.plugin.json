@@ -15,8 +15,8 @@
     "additionalProperties": false,
     "properties": {
       "apiToken": {
-        "type": "string",
-        "description": "Per-organization skill token issued by the backend SMTP module; authenticates the gateway↔backend channel only. Requests carry x-organization-id (env-derived); per-user mailbox routing is by agentId from trusted tool context, never from the tool schema."
+        "type": ["string", "object"],
+        "description": "Per-organization skill token issued by the backend SMTP module; authenticates the gateway↔backend channel only. Requests carry x-organization-id (env-derived); per-user mailbox routing is by agentId from trusted tool context, never from the tool schema. Accepts either a literal string or a SecretRef object {source, provider, id} resolved from env."
       },
       "apiBaseUrl": {
         "type": "string",

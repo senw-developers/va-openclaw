@@ -1,5 +1,6 @@
 import * as http from "http";
 import { definePluginEntry, type OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
+import { coerceSecretRef } from "openclaw/plugin-sdk/secret-ref-runtime";
 import { Type } from "typebox";
 
 // ---------------------------------------------------------------------------
@@ -20,9 +21,24 @@ function getLivePluginConfig(api: OpenClawPluginApi): NabuEmailConfig {
   const cfg = api.runtime.config.current();
   const pluginEntry = (cfg as any)?.plugins?.entries?.["nabu-email"]?.config;
   return {
-    apiToken: pluginEntry?.apiToken ?? "",
+    apiToken: resolveApiTokenInput(pluginEntry?.apiToken),
     apiBaseUrl: pluginEntry?.apiBaseUrl ?? "http://app:6001",
   };
+}
+
+/** Accept a literal token or an env SecretRef {source, provider, id} (nabu-files pattern). */
+function resolveApiTokenInput(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  const ref = coerceSecretRef(value);
+  if (!ref) {
+    return "";
+  }
+  if (ref.source === "env") {
+    return process.env[ref.id]?.trim() ?? "";
+  }
+  return "";
 }
 
 // ---------------------------------------------------------------------------
