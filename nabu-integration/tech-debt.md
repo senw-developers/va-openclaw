@@ -62,3 +62,28 @@ when unset (`src/config/io.ts` onMissing); plugin readers are being unified
 fail-closed at S6, but the config-interpolation path (cf-aig-metadata header)
 still fails open. Close with a doctor/startup check that the literal
 placeholder never reaches an outbound header.
+
+## S8 follow-ups (2026-08-07)
+
+### F-1 — GitHub labels for the new labeler entries
+
+`.github/labeler.yml` gained `extensions: nabu-*` ×7 + `nabu-integration`;
+the matching GH labels do not exist yet (labeler no-ops until created).
+Create after landing — repo-metadata write, held with the rest of the
+push/post batch.
+
+### F-2 — seed compose lags root compose surfaces
+
+`nabu-integration/spawn-seed/docker-compose.yml` does not forward
+`OPENCLAW_DISABLE_BONJOUR` / `OTEL_*` and still applies
+`cap_drop`/`no-new-privileges` to the CLI service only (seam D11 — root
+compose hardens both services). The resynced docker-setup.sh guards the
+missing pieces; close by resyncing the seed compose from root
+`docker-compose.yml` the same way #14 resynced the setup script.
+
+### F-3 — G6 validator dormant
+
+`nabu-integration/scripts/validate-channel-isolation.mjs` is ported
+byte-identical to the pin but not CI-wired: every existing instance would
+fail I3/I4 until a default-deny channel baseline ships. Wire into CI when
+the first per-user channel config lands.
