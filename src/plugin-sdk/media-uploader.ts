@@ -9,6 +9,7 @@ export type MediaUploadInput = {
   readonly mediaIndex?: number;
   readonly toolCallId?: string;
   readonly source?: string;
+  readonly userId?: string;
 };
 
 export type MediaUploadResult = {

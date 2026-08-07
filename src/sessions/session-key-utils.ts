@@ -4,6 +4,13 @@ import {
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
+import {
+  DM_MARKERS,
+  HTTP_USER_PREFIXES,
+  MAX_DM_MARKER_POSITION,
+  MAX_THREAD_STRIPS,
+  TAIL_FAIL_CLOSED_TOKENS,
+} from "./session-key-shapes.js";
 
 export type ParsedAgentSessionKey = {
   agentId: string;
@@ -249,6 +256,85 @@ export function parseAgentSessionKey(
     return null;
   }
   return { agentId, rest };
+}
+
+// Owner identity for files-api authorization (x-user-id only; see SPEC.md D22).
+export type SessionOwner = {
+  userId: string;
+};
+
+// Derive owning userId for files-api authorization. Returns null for group/
+// channel/cron/subagent/acp/main/anonymous-HTTP and strips ':thread:<id>'.
+export function parseSessionOwner(sessionKey: string | undefined | null): SessionOwner | null {
+  let current = normalizeOptionalString(sessionKey);
+  if (!current) {
+    return null;
+  }
+
+  // iterative thread-strip handles a:thread:b:thread:c
+  for (let i = 0; i < MAX_THREAD_STRIPS; i++) {
+    const { baseSessionKey, threadId } = parseThreadSessionSuffix(current);
+    if (!threadId || !baseSessionKey) {
+      break;
+    }
+    current = baseSessionKey;
+  }
+
+  const parsed = parseAgentSessionKey(current); // lowercases internally
+  if (!parsed) {
+    return null;
+  }
+
+  const restParts = parsed.rest.split(":").filter(Boolean);
+  if (restParts.length === 0) {
+    return null;
+  }
+  const head = restParts[0];
+
+  // HTTP per-user prefix shape
+  if (HTTP_USER_PREFIXES.has(head) && restParts.length >= 2) {
+    const userId = normalizeOptionalString(restParts.slice(1).join(":"));
+    return userId ? { userId } : null;
+  }
+
+  // fail-closed sentinels
+  if (
+    head === "openresponses" ||
+    head === "openai" ||
+    head === "cron" ||
+    head === "subagent" ||
+    head === "acp" ||
+    head === "main"
+  ) {
+    return null;
+  }
+
+  // DM marker scan: per-peer (idx 0), per-channel-peer (idx 1), per-account-channel-peer (idx 2)
+  let markerIdx = -1;
+  const scanLimit = Math.min(restParts.length, MAX_DM_MARKER_POSITION + 1);
+  for (let i = 0; i < scanLimit; i++) {
+    if (DM_MARKERS.has(restParts[i])) {
+      markerIdx = i;
+      break;
+    }
+  }
+  if (markerIdx === -1) {
+    return null;
+  }
+  if (restParts.length <= markerIdx + 1) {
+    return null;
+  }
+
+  // tail-sentinel fail-closed (see SPEC.md D22)
+  const tailSegments = restParts.slice(markerIdx + 1);
+  for (const segment of tailSegments) {
+    if (TAIL_FAIL_CLOSED_TOKENS.has(segment)) {
+      return null;
+    }
+  }
+
+  const userId = normalizeOptionalString(tailSegments.join(":"));
+  return userId ? { userId } : null;
 }
 
 export function isCronRunSessionKey(sessionKey: string | undefined | null): boolean {
