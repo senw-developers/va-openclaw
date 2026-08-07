@@ -72,7 +72,10 @@ function mockHttpsResponse(responseBody: string, statusCode = 200) {
     }),
     destroy: vi.fn(),
   });
-  vi.spyOn(https, "request").mockImplementation(((_opts: unknown, cb?: (res: unknown) => void) => {
+  vi.spyOn(https, "request").mockImplementation(((..._args: unknown[]) => {
+    const cb = _args.find((a) => typeof a === "function") as
+      | ((...args: unknown[]) => void)
+      | undefined;
     if (cb) (req as EventEmitter).on("response", cb);
     return req as unknown as ReturnType<typeof https.request>;
   }) as unknown as typeof https.request);
@@ -88,7 +91,7 @@ function mockHttpsError(errorMessage: string) {
     }),
     destroy: vi.fn(),
   });
-  vi.spyOn(https, "request").mockImplementation(((_opts: unknown, _cb?: (res: unknown) => void) => {
+  vi.spyOn(https, "request").mockImplementation(((..._args: unknown[]) => {
     return req as unknown as ReturnType<typeof https.request>;
   }) as unknown as typeof https.request);
 }

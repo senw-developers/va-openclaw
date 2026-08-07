@@ -46,6 +46,15 @@ Close by threading an enrichment callback through `SessionHistorySseState`.
 - s6d Drive dual-scope SKILL + tool-string held pending G2 (backend scope
   enumeration); `drive.file`-only backend would make the SKILL mislead agents.
 
+### R-4 — upload timeout asymmetry (accepted, Q16 reclassified)
+
+Callers (nabu-media-upload middleware, S3 chokepoint) fail open at 10s while
+the nabu-files transport allows 30s×3 attempts; a late-completing upload still
+populates the idempotency cache. Accepted as-is: the budgets can't share a
+constant without new SDK surface (cross-plugin imports are forbidden), and the
+late cache write warms the next resolve rather than corrupting state. Revisit
+only if abandoned-upload volume shows up in backend metrics.
+
 ### R-3 — org env fail-open at config layer (kept, monitored)
 
 `${OPENCLAW_ORGANIZATION_ID}` substitution warns-and-re-emits the placeholder

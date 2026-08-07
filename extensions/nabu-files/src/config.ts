@@ -9,9 +9,13 @@ import {
 } from "./nabu-files.constants.js";
 import type { NabuFilesConfig } from "./nabu-files.interface.js";
 
-// Read config on every call so rotated tokens take effect without restart.
+/**
+ * Live config per call: current() returns the runtime snapshot that gateway
+ * config.patch refreshes — the token-rotation path (T8). Direct file edits
+ * do NOT propagate; rotation must ride config.patch.
+ */
 export function getLivePluginConfig(api: OpenClawPluginApi): NabuFilesConfig {
-  const cfg = api.runtime.config.loadConfig();
+  const cfg = api.runtime.config.current();
   const entry = (cfg as any)?.plugins?.entries?.[PLUGIN_ID]?.config;
   return {
     apiToken: resolveApiTokenInput(entry?.apiToken),

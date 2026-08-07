@@ -11,15 +11,12 @@ interface OpenClawConfigShape {
 }
 
 /**
- * Read plugin config from the live config file on every call.
- *
- * `api.pluginConfig` is a startup snapshot and will NOT reflect changes
- * made via `config.patch` after startup. `api.runtime.config.loadConfig()`
- * re-reads the file from disk so rotations pushed by NestJS take effect
- * without a gateway restart.
+ * Live config per call: current() returns the runtime snapshot that gateway
+ * config.patch refreshes — the token-rotation path (T8). Direct file edits
+ * do NOT propagate; rotation must ride config.patch.
  */
 export function getLivePluginConfig(api: OpenClawPluginApi): NabuGoogleWorkspaceConfig {
-  const cfg = api.runtime.config.loadConfig() as OpenClawConfigShape;
+  const cfg = api.runtime.config.current() as OpenClawConfigShape;
   const entry = cfg.plugins?.entries?.[PLUGIN_ID]?.config;
   return {
     apiToken: entry?.apiToken ?? "",

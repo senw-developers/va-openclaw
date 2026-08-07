@@ -16,7 +16,7 @@
     "properties": {
       "apiToken": {
         "type": "string",
-        "description": "Platform skill token issued by senw-core; authenticates the gateway↔senw-core channel (channel auth only — per-user mailbox routing is by `agentId` from trusted tool context). See SPEC.md D16."
+        "description": "Per-organization skill token issued by the backend SMTP module; authenticates the gateway↔backend channel only. Requests carry x-organization-id (env-derived); per-user mailbox routing is by agentId from trusted tool context, never from the tool schema."
       },
       "apiBaseUrl": {
         "type": "string",

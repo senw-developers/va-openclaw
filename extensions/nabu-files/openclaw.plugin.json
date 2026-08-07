@@ -4,7 +4,7 @@
     "onStartup": true
   },
   "name": "@va-team/nabu-files",
-  "description": "Routes outbound tool media and inbound channel attachments to the Nabu Files API on NestJS so binaries live in MinIO/Hetzner instead of accumulating on disk. Per-user isolation: uploads/resolves are scoped solely by userId via the x-user-id header (senw-core 2026-06-01 contract — x-channel is no longer sent).",
+  "description": "Routes outbound tool media and inbound channel attachments to the Nabu Files API on NestJS so binaries live in MinIO/Hetzner instead of accumulating on disk. Composed tenancy: every upload/resolve carries x-organization-id (env-derived, one gateway stack per org) AND a numeric x-user-id for per-user ownership.",
   "enabledByDefault": false,
   "configSchema": {
     "type": "object",
@@ -12,7 +12,7 @@
     "properties": {
       "apiToken": {
         "type": ["string", "object"],
-        "description": "Platform skill-token issued by NestJS Files API module (purpose=files-api); authenticates the gateway as a trusted transport. Per-user ownership is carried solely by the x-user-id request header (senw-core 2026-06-01 contract), not this token. Accepts either a literal string or a SecretRef object {source, provider, id} resolved from env."
+        "description": "Per-organization skill-token issued by the NestJS Files API module (purpose=files-api); authenticates the gateway as a trusted transport. Tenant scoping rides the x-organization-id and x-user-id request headers, not this token. Accepts either a literal string or a SecretRef object {source, provider, id} resolved from env."
       },
       "apiBaseUrl": {
         "type": "string",
