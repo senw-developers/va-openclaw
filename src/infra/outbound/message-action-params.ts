@@ -431,9 +431,7 @@ export function resolveAttachmentMediaPolicy(params: {
     mediaAccess: resolveOutboundMediaAccess({
       mediaAccess: params.mediaAccess,
       mediaLocalRoots: explicitLocalRoots === "any" ? undefined : explicitLocalRoots,
-      mediaReadFile: params.mediaAccess?.readFile
-        ? undefined
-        : wrapReadFileForHttpUrls(params.mediaReadFile),
+      mediaReadFile: params.mediaAccess?.readFile ? undefined : params.mediaReadFile,
     }),
     ...(explicitLocalRoots !== undefined ? { mediaLocalRoots: explicitLocalRoots } : {}),
     ...(params.mediaAccess?.readFile
@@ -441,27 +439,6 @@ export function resolveAttachmentMediaPolicy(params: {
       : params.mediaReadFile
         ? { mediaReadFile: params.mediaReadFile }
         : {}),
-  };
-}
-
-// Channels supply a local-file readFile; route http(s) paths through fetch
-// so signed URLs from the Files API work for every channel adapter.
-function wrapReadFileForHttpUrls(
-  inner: OutboundMediaReadFile | undefined,
-): OutboundMediaReadFile | undefined {
-  return async (filePath: string) => {
-    if (/^https?:\/\//i.test(filePath)) {
-      const res = await fetch(filePath);
-      if (!res.ok) {
-        throw new Error(`http fetch failed (${res.status}) for ${filePath}`);
-      }
-      const arr = await res.arrayBuffer();
-      return Buffer.from(arr);
-    }
-    if (!inner) {
-      throw new Error(`no host readFile available for local path: ${filePath}`);
-    }
-    return inner(filePath);
   };
 }
 
