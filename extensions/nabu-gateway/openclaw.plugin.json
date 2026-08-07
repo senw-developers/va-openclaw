@@ -1,5 +1,8 @@
 {
   "id": "nabu-gateway",
+  "activation": {
+    "onStartup": true
+  },
   "name": "@va-team/nabu-gateway",
   "description": "VA.Team gateway bridge — LLM usage tracking via Cloudflare AI Gateway and credit-based gating",
   "enabledByDefault": true,
@@ -16,6 +19,10 @@
         "type": "string",
         "description": "NestJS backend base URL — Docker-internal",
         "default": "http://app:6001"
+      },
+      "apiToken": {
+        "type": "string",
+        "description": "Platform skill token issued by senw-core; sent as x-skill-token on usage/ingest (channel auth). Same token as nabu-email. See SPEC.md D16."
       }
     }
   },
@@ -23,6 +30,10 @@
     "apiBaseUrl": {
       "label": "API Base URL",
       "placeholder": "http://app:6001"
+    },
+    "apiToken": {
+      "label": "API Token",
+      "sensitive": true
     }
   }
 }

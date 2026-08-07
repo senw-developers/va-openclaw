@@ -1,8 +1,14 @@
 {
   "id": "nabu-email",
+  "activation": {
+    "onStartup": true
+  },
   "name": "@va-team/nabu-email",
   "description": "Send and fetch emails via the VA.Team backend API",
   "skills": ["./skills"],
+  "contracts": {
+    "tools": ["nabu_email_send", "nabu_email_fetch"]
+  },
   "enabledByDefault": true,
   "configSchema": {
     "type": "object",
@@ -10,7 +16,7 @@
     "properties": {
       "apiToken": {
         "type": "string",
-        "description": "Per-organization skill token issued by the SMTP module"
+        "description": "Platform skill token issued by senw-core; authenticates the gateway↔senw-core channel (channel auth only — per-user mailbox routing is by `agentId` from trusted tool context). See SPEC.md D16."
       },
       "apiBaseUrl": {
         "type": "string",
