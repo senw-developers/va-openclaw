@@ -51,7 +51,7 @@ Each entry lists the package, distribution route, and description.
 
 ## Core npm package
 
-90 plugins
+96 plugins
 
 - **[admin-http-rpc](/plugins/reference/admin-http-rpc)** (`@openclaw/admin-http-rpc`) - included in OpenClaw. OpenClaw admin HTTP RPC endpoint.
 
@@ -154,6 +154,18 @@ Each entry lists the package, distribution route, and description.
 - **[mistral](/plugins/reference/mistral)** (`@openclaw/mistral-provider`) - included in OpenClaw. Adds Mistral model provider support to OpenClaw.
 
 - **[moonshot](/plugins/reference/moonshot)** (`@openclaw/moonshot-provider`) - included in OpenClaw. Adds Moonshot model provider support to OpenClaw.
+
+- **[nabu-1password](/plugins/reference/nabu-1password)** (`@va-team/nabu-1password`) - included in OpenClaw. Per-user 1Password read access. Brokers a per-user 1Password service-account token from the Nabu backend per invocation and runs the native op CLI in a scoped child process. Exposes a single read-only passthrough tool the agent uses to resolve secret references and list items/vaults.
+
+- **[nabu-email](/plugins/reference/nabu-email)** (`@va-team/nabu-email`) - included in OpenClaw. Send and fetch emails via the VA.Team backend API.
+
+- **[nabu-files](/plugins/reference/nabu-files)** (`@va-team/nabu-files`) - included in OpenClaw. Routes outbound tool media and inbound channel attachments to the Nabu Files API on NestJS so binaries live in MinIO/Hetzner instead of accumulating on disk. Composed tenancy: every upload/resolve carries x-organization-id (env-derived, one gateway stack per org) AND a numeric x-user-id for per-user ownership.
+
+- **[nabu-gateway](/plugins/reference/nabu-gateway)** (`@va-team/nabu-gateway`) - included in OpenClaw. VA.Team gateway bridge — LLM usage tracking via Cloudflare AI Gateway and credit-based gating.
+
+- **[nabu-google-workspace](/plugins/reference/nabu-google-workspace)** (`@va-team/nabu-google-workspace`) - included in OpenClaw. Per-tenant Google Drive + Calendar access. Vends short-lived OAuth access tokens fetched from the Nabu backend and exposes a single passthrough tool the agent uses against Google REST APIs.
+
+- **[nabu-media-upload](/plugins/reference/nabu-media-upload)** (`@va-team/nabu-media-upload`) - included in OpenClaw. Uploads agent tool-result media (local paths, MiniMax CDN) to the Nabu Files API and rewrites content/details with signed URLs and web file refs.
 
 - **[novita](/plugins/reference/novita)** (`@openclaw/novita-provider`) - included in OpenClaw. Adds Novita, Novita AI, Novitaai model provider support to OpenClaw.
 
