@@ -71,6 +71,11 @@ COPY --from=workspace-deps /out/${OPENCLAW_BUNDLED_PLUGIN_DIR}/ ./${OPENCLAW_BUN
 # Docker builds on small VMs may otherwise fail with "Killed" (exit 137).
 RUN --mount=type=cache,id=openclaw-pnpm-store,target=/root/.local/share/pnpm/store,sharing=locked \
     NODE_OPTIONS=--max-old-space-size=2048 pnpm install --frozen-lockfile \
+      --fetch-timeout=600000 \
+      --fetch-retries=10 \
+      --fetch-retry-mintimeout=10000 \
+      --fetch-retry-maxtimeout=120000 \
+      --network-concurrency=2 \
       --config.supportedArchitectures.os=linux \
       --config.supportedArchitectures.cpu="$(node -p 'process.arch')" \
       --config.supportedArchitectures.libc=glibc
@@ -140,8 +145,16 @@ ENV npm_config_network_concurrency=2 \
     npm_config_fetch_retry_mintimeout=30000
 # BuildKit cache mounts are not part of cached layers; seed tarballs for the
 # installed prod graph in the same step that runs offline prune.
+#
+# `list-prod-store-packages.mjs` walks the full lockfile (multi-arch) and emits
+# every spec — including darwin/win32/wasm/musl/non-x64 prebuilts that the
+# install step already filtered out via --config.supportedArchitectures. We ship
+# a linux-x64-glibc image, so drop obvious non-matching prebuilts at the xargs
+# boundary before `pnpm store add`; the script itself stays untouched.
 RUN --mount=type=cache,id=openclaw-pnpm-store,target=/root/.local/share/pnpm/store,sharing=locked \
-    { pnpm list --prod --depth Infinity --json | node scripts/list-prod-store-packages.mjs | xargs -r pnpm store add; } || \
+    { pnpm list --prod --depth Infinity --json | node scripts/list-prod-store-packages.mjs | \
+      grep -vE '(darwin|win32|-win-|win-(arm64|x64|ia32|musl)|-mac-|mac-(arm64|x64|metal)|android|freebsd|openbsd|netbsd|sunos|aix-|openharmony|wasm32|wasi-|linuxmusl|linux-arm|linux-ppc|linux-riscv|linux-s390|linux-ia32|linux-(x64|arm64)-musl)' | \
+      xargs -r pnpm store add; } || \
       echo "store-seed: some non-target-platform tarballs (darwin/win32/musl/arm) could not be fetched; non-fatal — the offline prune below keeps only linux/glibc, which the install step already cached in the shared store" && \
     CI=true pnpm prune --prod \
       --config.offline=true \
@@ -302,7 +315,8 @@ RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,shar
 
 # 1Password CLI (signed apt repo, multi-arch).
 # Baked into every Nabu tenant's gateway image so the nabu-1password plugin
-# can transparently shell out to `op` with the tenant's injected token.
+# can shell out to `op` with a per-invocation brokered token (confined to the
+# `op` child env — never the gateway env).
 # Mirrors the Docker CLI install above for GPG-fingerprint verification.
 #
 # Note: the 1Password apt repo only serves the current latest version —
