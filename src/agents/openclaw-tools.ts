@@ -266,6 +266,7 @@ export function createOpenClawTools(
         authProfileStore: options?.authProfileStore,
         agentSessionKey: mediaGenerationAgentSessionKey,
         requesterOrigin: deliveryContext ?? undefined,
+        requesterUserId: options?.requesterSenderId ?? undefined,
         workspaceDir,
         sandbox,
         fsPolicy: options?.fsPolicy,
@@ -284,6 +285,7 @@ export function createOpenClawTools(
         authProfileStore: options?.authProfileStore,
         agentSessionKey: mediaGenerationAgentSessionKey,
         requesterOrigin: deliveryContext ?? undefined,
+        requesterUserId: options?.requesterSenderId ?? undefined,
         workspaceDir,
         sandbox,
         fsPolicy: options?.fsPolicy,
@@ -298,6 +300,7 @@ export function createOpenClawTools(
         authProfileStore: options?.authProfileStore,
         agentSessionKey: mediaGenerationAgentSessionKey,
         requesterOrigin: deliveryContext ?? undefined,
+        requesterUserId: options?.requesterSenderId ?? undefined,
         workspaceDir,
         sandbox,
         fsPolicy: options?.fsPolicy,
@@ -437,7 +440,12 @@ export function createOpenClawTools(
       agentAccountId: options?.agentAccountId,
     }),
     ...(includeTranscriptsTool ? [createTranscriptsTool({ config: resolvedConfig })] : []),
-    ...collectPresentOpenClawTools([imageGenerateTool, deliverTool, musicGenerateTool, videoGenerateTool]),
+    ...collectPresentOpenClawTools([
+      imageGenerateTool,
+      deliverTool,
+      musicGenerateTool,
+      videoGenerateTool,
+    ]),
     ...(embedded
       ? []
       : [

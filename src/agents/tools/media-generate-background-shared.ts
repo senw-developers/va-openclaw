@@ -4,10 +4,15 @@
  * Image, video, and music generation use this to track tasks, wake sessions, and deliver generated media.
  */
 import crypto from "node:crypto";
+import {
+  appendExactAssistantMessageToSessionTranscript,
+  type SessionTranscriptAssistantMessage,
+} from "../../config/sessions/transcript.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { clearAgentRunContext, registerAgentRunContext } from "../../infra/agent-events.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { getMediaUploader } from "../../plugin-sdk/media-uploader.js";
 import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
 import {
   completeTaskRunByRunId,
@@ -26,6 +31,7 @@ import {
 } from "../../utils/message-channel.js";
 import {
   mediaUrlsFromGeneratedAttachments,
+  rebuildWakeResultWithAttachments,
   type AgentGeneratedAttachment,
 } from "../generated-attachments.js";
 import { formatAgentInternalEventsForPrompt, type AgentInternalEvent } from "../internal-events.js";
@@ -34,6 +40,7 @@ import type { SubagentAnnounceDeliveryFailureReason } from "../subagent-announce
 
 const log = createSubsystemLogger("agents/tools/media-generate-background-shared");
 const MEDIA_GENERATION_TASK_KEEPALIVE_INTERVAL_MS = 60_000;
+const MEDIA_GENERATION_COMPLETION_UPLOAD_TIMEOUT_MS = 10_000;
 const MEDIA_DIRECT_FALLBACK_DELIVERY_REASONS = new Set<SubagentAnnounceDeliveryFailureReason>([
   "generated_media_missing",
   "message_tool_delivery_missing",
@@ -46,6 +53,8 @@ export type MediaGenerationTaskHandle = {
   runId: string;
   requesterSessionKey: string;
   requesterOrigin?: DeliveryContext;
+  /** Numeric senw-core userId; required by the completion upload path. */
+  requesterUserId?: string;
   taskLabel: string;
 };
 
@@ -70,11 +79,15 @@ export type MediaGenerationExecutionResult = {
   wakeResult: string;
   attachments?: AgentGeneratedAttachment[];
   mediaUrls?: string[];
+  /** Files-API ids minted at completion upload; persisted for chat-history fileRefs. */
+  fileIds?: number[];
 };
 
 type CreateMediaGenerationTaskRunParams = {
   sessionKey?: string;
   requesterOrigin?: DeliveryContext;
+  /** Trusted sender userId; persisted on the resulting handle. */
+  requesterUserId?: string;
   prompt: string;
   providerId?: string;
 };
@@ -107,6 +120,8 @@ type WakeMediaGenerationTaskCompletionParams = {
   result: string;
   attachments?: AgentGeneratedAttachment[];
   mediaUrls?: string[];
+  /** Files-API ids minted at completion upload; stamped onto the visible assistant card. */
+  fileIds?: number[];
   statsLine?: string;
 };
 
@@ -128,6 +143,7 @@ function touchMediaGenerationTaskRunContext(handle: MediaGenerationTaskHandle) {
 function createMediaGenerationTaskRun(params: {
   sessionKey?: string;
   requesterOrigin?: DeliveryContext;
+  requesterUserId?: string;
   prompt: string;
   providerId?: string;
   toolName: string;
@@ -162,11 +178,12 @@ function createMediaGenerationTaskRun(params: {
     if (!task) {
       return null;
     }
-    const handle = {
+    const handle: MediaGenerationTaskHandle = {
       taskId: task.taskId,
       runId,
       requesterSessionKey: sessionKey,
       requesterOrigin: params.requesterOrigin,
+      ...(params.requesterUserId?.trim() ? { requesterUserId: params.requesterUserId.trim() } : {}),
       taskLabel: params.prompt,
     };
     touchMediaGenerationTaskRunContext(handle);
@@ -284,6 +301,118 @@ function failMediaGenerationTaskRun(params: {
   }
 }
 
+/**
+ * Upload local-path attachments via the registered media uploader and rewrite
+ * executed.attachments/mediaUrls/wakeResult/fileIds in place. Fail-open on
+ * missing uploader, non-numeric userId, or per-attachment failure.
+ */
+async function uploadCompletionAttachmentsInPlace(
+  executed: MediaGenerationExecutionResult,
+  context: { toolName: string; handle: MediaGenerationTaskHandle | null },
+): Promise<void> {
+  const uploader = getMediaUploader();
+  if (!uploader) return;
+  const userId = context.handle?.requesterUserId?.trim();
+  if (!userId || !/^\d+$/.test(userId)) {
+    if (context.handle && executed.attachments?.some((a) => a.path ?? a.filePath)) {
+      log.warn("Skipping completion upload: non-numeric requesterUserId", {
+        toolName: context.toolName,
+        taskId: context.handle.taskId,
+        runId: context.handle.runId,
+      });
+    }
+    return;
+  }
+  const attachments = executed.attachments;
+  if (!attachments?.length) return;
+
+  type UploadOutcome = { fileId: number; signedUrl: string; mimeType?: string; name?: string };
+  const rewrites = new Map<string, UploadOutcome>();
+
+  await Promise.all(
+    attachments.map(async (att, mediaIndex) => {
+      const local = att.path ?? att.filePath;
+      if (!local) return;
+      try {
+        const result = await withCompletionUploadTimeout(
+          uploader({
+            filePath: local,
+            // responseId+mediaIndex → unique idempotency key per attachment.
+            responseId: `media-gen:${context.handle?.taskId}`,
+            toolCallId: context.handle?.taskId,
+            mediaIndex,
+            source: `media_generation_completion:${context.toolName}`,
+            userId,
+            ...(att.mimeType ? { mimeHint: att.mimeType } : {}),
+          }),
+          MEDIA_GENERATION_COMPLETION_UPLOAD_TIMEOUT_MS,
+        );
+        rewrites.set(local, {
+          fileId: result.fileId,
+          signedUrl: result.signedUrl,
+          mimeType: result.mimeType,
+          name: result.name,
+        });
+      } catch (error) {
+        log.warn("Completion upload failed; falling back to local path", {
+          toolName: context.toolName,
+          taskId: context.handle?.taskId,
+          runId: context.handle?.runId,
+          path: local,
+          error,
+        });
+      }
+    }),
+  );
+
+  if (rewrites.size === 0) return;
+
+  executed.attachments = attachments.map((att) => {
+    const local = att.path ?? att.filePath;
+    if (!local) return att;
+    const rewrite = rewrites.get(local);
+    if (!rewrite) return att;
+    const { path: _p, filePath: _fp, ...rest } = att;
+    return {
+      ...rest,
+      url: rewrite.signedUrl,
+      ...(rewrite.mimeType ? { mimeType: rewrite.mimeType } : {}),
+      ...(rewrite.name ? { name: rewrite.name } : {}),
+    };
+  });
+
+  executed.mediaUrls = Array.from(
+    new Set([
+      ...(executed.mediaUrls ?? []).map((u) => rewrites.get(u)?.signedUrl ?? u),
+      ...mediaUrlsFromGeneratedAttachments(executed.attachments),
+    ]),
+  );
+
+  executed.fileIds = Array.from(new Set(Array.from(rewrites.values()).map((r) => r.fileId)));
+
+  if (executed.wakeResult) {
+    executed.wakeResult = rebuildWakeResultWithAttachments(
+      executed.wakeResult,
+      executed.attachments,
+    );
+  }
+}
+
+async function withCompletionUploadTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`media generation completion upload timed out after ${ms}ms`));
+    }, ms);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function buildMediaGenerationReplyInstruction(params: {
   status: "ok" | "error";
   completionLabel: string;
@@ -292,7 +421,7 @@ function buildMediaGenerationReplyInstruction(params: {
     return [
       `The ${params.completionLabel} is ready for the original chat.`,
       'Use the current visible-reply contract: if this session requires message-tool replies, call message(action="send") with a short caption and every structured attachment from the internal event, then reply only NO_REPLY.',
-      "Otherwise, write the normal final reply and attach every generated media path with final-reply MEDIA lines.",
+      "Otherwise, write the normal final reply and attach every generated media URL with final-reply MEDIA lines.",
     ].join(" ");
   }
   return [
@@ -426,6 +555,14 @@ export function scheduleMediaGenerationTaskCompletion<
         error,
       });
     }
+
+    // Upload local-path attachments and rewrite executed to signed URLs
+    // before wake fires (covers both wake-success and direct-fallback paths).
+    await uploadCompletionAttachmentsInPlace(executed, {
+      toolName: params.toolName,
+      handle: params.handle,
+    });
+
     let terminalResult: RequiredCompletionTerminalResult | undefined;
     try {
       const completionDelivered = await params.lifecycle.wakeTaskCompletion({
@@ -436,6 +573,7 @@ export function scheduleMediaGenerationTaskCompletion<
         result: executed.wakeResult,
         attachments: executed.attachments,
         mediaUrls: executed.mediaUrls,
+        fileIds: executed.fileIds,
       });
       if (!completionDelivered) {
         // A generated result without confirmed delivery is terminally unsafe for task closeout.
@@ -514,6 +652,7 @@ async function wakeMediaGenerationTaskCompletion(params: {
   result: string;
   attachments?: AgentGeneratedAttachment[];
   mediaUrls?: string[];
+  fileIds?: number[];
   statsLine?: string;
   eventSource: AgentInternalEvent["source"];
   announceType: string;
@@ -553,6 +692,44 @@ async function wakeMediaGenerationTaskCompletion(params: {
   const triggerMessage =
     formatAgentInternalEventsForPrompt(internalEvents) ||
     `A ${params.completionLabel} generation task finished. Process the completion update now.`;
+  // Stamp Files-API ids onto a visible assistant completion row so chat-history
+  // and live enrichment bind fileRefs[] to it (the wake user message is hidden).
+  if (params.status === "ok" && params.fileIds && params.fileIds.length > 0) {
+    const label = `${params.completionLabel[0]?.toUpperCase() ?? "M"}${params.completionLabel.slice(1)}`;
+    try {
+      await appendExactAssistantMessageToSessionTranscript({
+        config: params.config,
+        agentId: resolveAgentIdFromSessionKey(params.handle.requesterSessionKey),
+        sessionKey: params.handle.requesterSessionKey,
+        idempotencyKey: `${announceId}:media-card`,
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: `${label} generation completed.` }],
+          api: "openai-responses",
+          provider: "openclaw",
+          model: "media-completion",
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+          stopReason: "stop",
+          timestamp: Date.now(),
+          details: { nabuFileIds: params.fileIds },
+        } as SessionTranscriptAssistantMessage,
+      });
+    } catch (error) {
+      log.warn("Media generation completion card persistence failed", {
+        taskId: params.handle.taskId,
+        runId: params.handle.runId,
+        toolName: params.toolName,
+        error,
+      });
+    }
+  }
   const delivery = await deliverSubagentAnnouncement({
     requesterSessionKey: params.handle.requesterSessionKey,
     targetRequesterSessionKey: params.handle.requesterSessionKey,

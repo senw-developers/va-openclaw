@@ -850,6 +850,7 @@ export function createImageGenerateTool(options?: {
   authProfileStore?: AuthProfileStore;
   agentSessionKey?: string;
   requesterOrigin?: DeliveryContext;
+  requesterUserId?: string;
   workspaceDir?: string;
   sandbox?: ImageGenerateSandboxConfig;
   fsPolicy?: ToolFsPolicy;
@@ -1023,6 +1024,7 @@ export function createImageGenerateTool(options?: {
       const taskHandle = createImageGenerationTaskRun({
         sessionKey: options?.agentSessionKey,
         requesterOrigin: options?.requesterOrigin,
+        requesterUserId: options?.requesterUserId,
         prompt,
         providerId: selectedProvider?.id,
       });

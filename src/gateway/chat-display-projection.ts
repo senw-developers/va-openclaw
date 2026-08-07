@@ -4,12 +4,16 @@ import { createHash } from "node:crypto";
 import { asFiniteNumber } from "@openclaw/normalization-core/number-coercion";
 import { asOptionalRecord as readRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { OPENCLAW_RUNTIME_CONTEXT_CUSTOM_TYPE } from "../agents/internal-runtime-context.js";
+import {
+  INTERNAL_RUNTIME_CONTEXT_BEGIN,
+  OPENCLAW_RUNTIME_CONTEXT_CUSTOM_TYPE,
+} from "../agents/internal-runtime-context.js";
 import { isHeartbeatOkResponse, isHeartbeatUserMessage } from "../auto-reply/heartbeat-filter.js";
 import { HEARTBEAT_PROMPT } from "../auto-reply/heartbeat.js";
 import { extractCanvasFromText } from "../chat/canvas-render.js";
 import {
   INTER_SESSION_PROMPT_PREFIX_BASE,
+  isAgentMediatedCompletionSourceTool,
   normalizeInputProvenance,
   stripInterSessionPromptPrefixForDisplay,
 } from "../sessions/input-provenance.js";
@@ -1319,15 +1323,23 @@ function mergeTtsSupplementMessages(
   return changed ? merged : messages;
 }
 
-function isSubagentAnnounceInterSessionUserMessage(message: Record<string, unknown>): boolean {
+function isHiddenInterSessionUserMessage(message: Record<string, unknown>): boolean {
   const provenance = normalizeInputProvenance(message.provenance);
-  if (provenance?.kind === "inter_session" && provenance.sourceTool === "subagent_announce") {
+  const provenanceTool = provenance?.kind === "inter_session" ? provenance.sourceTool : undefined;
+  if (
+    provenanceTool === "subagent_announce" ||
+    isAgentMediatedCompletionSourceTool(provenanceTool)
+  ) {
     return true;
   }
   const text = extractProjectedText(message.content ?? message.text);
-  return (
-    text.includes(INTER_SESSION_PROMPT_PREFIX_BASE) && text.includes("sourceTool=subagent_announce")
-  );
+  // Steer-route wakes (active requester run) carry no provenance and no
+  // inter-session prefix; their text is the raw runtime-context block.
+  if (text.includes(INTERNAL_RUNTIME_CONTEXT_BEGIN)) {
+    return true;
+  }
+  const textTool = extractPromptPrefixField(text, "sourceTool");
+  return textTool === "subagent_announce" || isAgentMediatedCompletionSourceTool(textTool);
 }
 
 function readChatHistoryRecordTimestampMs(message: unknown): number | undefined {
@@ -1429,7 +1441,7 @@ function shouldHideProjectedHistoryMessage(message: Record<string, unknown>): bo
   if (!roleContent) {
     return false;
   }
-  if (roleContent.role === "user" && isSubagentAnnounceInterSessionUserMessage(message)) {
+  if (roleContent.role === "user" && isHiddenInterSessionUserMessage(message)) {
     return true;
   }
   if (

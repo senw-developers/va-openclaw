@@ -78,3 +78,21 @@ export function formatGeneratedAttachmentLines(
   }
   return lines;
 }
+
+/** Rebuild a wakeResult's Attachments: block from the current attachments. */
+export function rebuildWakeResultWithAttachments(
+  wakeResult: string,
+  attachments: readonly AgentGeneratedAttachment[] | undefined,
+): string {
+  const headerIdx = wakeResult.indexOf("\nAttachments:");
+  const startsWithHeader = wakeResult.startsWith("Attachments:");
+  if (headerIdx < 0 && !startsWithHeader) {
+    return wakeResult;
+  }
+  const preamble = startsWithHeader ? "" : wakeResult.slice(0, headerIdx);
+  const rebuiltBlock = formatGeneratedAttachmentLines(attachments).join("\n");
+  if (!rebuiltBlock) {
+    return preamble;
+  }
+  return preamble ? `${preamble}\n${rebuiltBlock}` : rebuiltBlock;
+}

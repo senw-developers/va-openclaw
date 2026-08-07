@@ -929,6 +929,7 @@ export function createVideoGenerateTool(options?: {
   authProfileStore?: AuthProfileStore;
   agentSessionKey?: string;
   requesterOrigin?: DeliveryContext;
+  requesterUserId?: string;
   workspaceDir?: string;
   sandbox?: VideoGenerateSandboxConfig;
   fsPolicy?: ToolFsPolicy;
@@ -1175,6 +1176,7 @@ export function createVideoGenerateTool(options?: {
       const taskHandle = createVideoGenerationTaskRun({
         sessionKey: options?.agentSessionKey,
         requesterOrigin: options?.requesterOrigin,
+        requesterUserId: options?.requesterUserId,
         prompt,
         providerId: selectedProvider?.id,
       });
