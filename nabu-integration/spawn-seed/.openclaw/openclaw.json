@@ -257,7 +257,11 @@
       "nabu-email": {
         "enabled": true,
         "config": {
-          "apiToken": "",
+          "apiToken": {
+            "source": "env",
+            "provider": "default",
+            "id": "NABU_EMAIL_SKILL_TOKEN"
+          },
           "apiBaseUrl": "http://app:6001"
         }
       },
@@ -309,7 +313,11 @@
       "nabu-google-workspace": {
         "enabled": false,
         "config": {
-          "apiToken": "",
+          "apiToken": {
+            "source": "env",
+            "provider": "default",
+            "id": "NABU_GOOGLE_WORKSPACE_SKILL_TOKEN"
+          },
           "apiBaseUrl": "http://app:6001",
           "tokenVersion": 0
         }

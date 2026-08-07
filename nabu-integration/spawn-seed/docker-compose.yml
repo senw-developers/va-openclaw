@@ -21,8 +21,9 @@ services:
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
-      # Auth-profile secrets persist outside the config dir (root
-      # docker-compose.yml pattern) so re-provisioning keeps OAuth material.
+      # Auth-profile secrets persist outside the config dir so re-provisioning
+      # keeps OAuth material; default must match docker-setup.sh (per-instance
+      # anchor — co-hosted tenants must not share a secret store).
       - ${OPENCLAW_AUTH_PROFILE_SECRET_DIR:-${OPENCLAW_CONFIG_DIR}-auth-profile-secrets}:/home/node/.config/openclaw
       ## Uncomment the lines below to enable sandbox isolation
       ## (agents.defaults.sandbox). Requires Docker CLI in the image

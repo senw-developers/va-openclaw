@@ -83,7 +83,10 @@ missing pieces; close by resyncing the seed compose from root
 
 ### F-3 — G6 validator dormant
 
-`nabu-integration/scripts/validate-channel-isolation.mjs` is ported
-byte-identical to the pin but not CI-wired: every existing instance would
-fail I3/I4 until a default-deny channel baseline ships. Wire into CI when
-the first per-user channel config lands.
+`nabu-integration/scripts/validate-channel-isolation.mjs` carries the pin's
+content re-formatted by repo oxfmt (import order + line wrapping; semantics
+proven identical on all nine failure branches; mode 755 for the shebang —
+pin ships 644). Not CI-wired: every existing instance would fail I3/I4 until
+a default-deny channel baseline ships. Wire into CI when the first per-user
+channel config lands; compress the oversized file header to a ≤3-line JSDoc
+on that touch.
