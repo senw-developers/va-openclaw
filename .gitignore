@@ -104,6 +104,10 @@ USER.md
 # though the bare names match the local-untracked rule above.
 !extensions/oc-path/src/oc-path/tests/fixtures/real/IDENTITY.md
 !extensions/oc-path/src/oc-path/tests/fixtures/real/USER.md
+# Exception: spawn-seed persona files are the canonical templates for
+# per-instance + per-user-agent provisioning and MUST be tracked.
+!nabu-integration/spawn-seed/.openclaw/**/IDENTITY.md
+!nabu-integration/spawn-seed/.openclaw/**/USER.md
 *.tgz
 *.tar.gz
 *.zip
@@ -219,8 +223,12 @@ ui/src/ui/__screenshots__
 ui/src/ui/views/__screenshots__
 ui/.vitest-attachments
 
-# Instance configurations are local-only; never commit tenant state.
-nabu-integration/instances/
+# Per-instance nabu deployments are generated on each host from spawn-seed/.
+# Conventional names: nabu-demo (shared dev), nabu (production), nabu-test.
+# spawn-seed/ stays in repo as the canonical template + upstream-merge parity;
+# instances are local-only (auth profiles, sessions, workspace state, knowledge
+# baseline are all per-host).
+nabu-integration/instances/*
 
 # Spawn-seed credential/state files are local-only (G4): auth material, device
 # identity, and generated artifacts. Committed once pre-2026-08; those values
@@ -230,6 +238,9 @@ nabu-integration/spawn-seed/.openclaw/identity/
 nabu-integration/spawn-seed/.openclaw/logs/
 nabu-integration/spawn-seed/.openclaw/update-check.json
 nabu-integration/spawn-seed/.openclaw/completions/
+# Bootstrap marker is generated per-instance at first boot; a pre-seeded copy
+# makes fresh tenants skip workspace bootstrap (#16/Q13) — never re-track.
+nabu-integration/spawn-seed/.openclaw/workspace/.openclaw/
 
 # Generated docs baseline artifacts (locally generated, only hashes tracked)
 docs/.generated/*.json
