@@ -1,303 +1,164 @@
-import { existsSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
-import type { GatewayRequestContext, GatewayRequestHandlers } from "./types.js";
+/**
+ * Gateway dm.pair.* RPC handlers (scope: operator.pairing) — thin wrappers over
+ * src/pairing/pairing-store.ts, which owns locking, atomic writes, account-key
+ * filenames, and on-disk shapes. Hand-rolled I/O here once wiped allowlists.
+ */
+import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/index.js";
+import {
+  approveChannelPairingCode,
+  listChannelPairingRequests,
+  PAIRING_PENDING_TTL_MS,
+  rejectChannelPairingCode,
+  type PairingChannel,
+  type PairingRequest,
+} from "../../pairing/pairing-store.js";
+import type { GatewayRequestHandlers } from "./types.js";
 
-// ---------------------------------------------------------------------------
-// Supported channels
-// ---------------------------------------------------------------------------
+/**
+ * Format-only channel validation: extension channels are legal pairing targets,
+ * so we deliberately never materialize the channel registry in gateway server
+ * code (src/gateway/CLAUDE.md). Mirrors pairing-cli's extension passthrough.
+ */
+const CHANNEL_FORMAT = /^[a-z][a-z0-9_-]{0,63}$/;
 
-const SUPPORTED_CHANNELS = [
-  "telegram",
-  "whatsapp",
-  "signal",
-  "imessage",
-  "discord",
-  "slack",
-  "feishu",
-] as const;
-
-type DmPairingChannel = (typeof SUPPORTED_CHANNELS)[number];
-
-// ---------------------------------------------------------------------------
-// On-disk schema — ~/.openclaw/credentials/<channel>-pairing.json
-//
-// {
-//   "version": 1,
-//   "requests": [
-//     {
-//       "id": "1702326053",       ← sender's platform user ID
-//       "code": "LP3FHZ45",       ← 8-char approval code
-//       "createdAt": "2026-...",  ← ISO timestamp; expiry = createdAt + 1h
-//       "lastSeenAt": "2026-...",
-//       "meta": { "firstName": "...", "lastName": "...", "accountId": "default" }
-//     }
-//   ]
-// }
-// ---------------------------------------------------------------------------
-
-interface PairingRequest {
+type DmPairingEntry = {
   id: string;
   code: string;
-  createdAt: string;
-  lastSeenAt: string;
-  meta?: Record<string, unknown>;
-}
-
-interface PairingFile {
-  version: number;
-  requests: PairingRequest[];
-}
-
-// Matches CLI behaviour: codes expire 1 hour after creation
-const PAIRING_TTL_MS = 60 * 60 * 1000;
-
-// ---------------------------------------------------------------------------
-// RPC response shape
-// ---------------------------------------------------------------------------
-
-interface DmPairingEntry {
-  id: string;
-  code: string;
-  channel: DmPairingChannel;
+  channel: PairingChannel;
   createdAt: string;
   expiresAt: string;
-  meta?: Record<string, unknown>;
-}
+  meta?: Record<string, string>;
+};
 
-// ---------------------------------------------------------------------------
-// Path helpers
-// ---------------------------------------------------------------------------
+type ListParams = { channel: PairingChannel; accountId?: string };
+type MutateParams = ListParams & { code: string };
 
-function getStateDir(context: GatewayRequestContext): string {
-  return (
-    (context as unknown as { statePath?: string }).statePath ??
-    process.env["OPENCLAW_STATE_DIR"] ??
-    join(process.env["HOME"] ?? "/home/node", ".openclaw")
-  );
-}
-
-function pairingFilePath(stateDir: string, channel: string): string {
-  return join(stateDir, "credentials", `${channel}-pairing.json`);
-}
-
-function allowFromFilePath(stateDir: string, channel: string): string {
-  return join(stateDir, "credentials", `${channel}-allowFrom.json`);
-}
-
-// ---------------------------------------------------------------------------
-// File I/O
-// ---------------------------------------------------------------------------
-
-function readPairingFile(filePath: string): PairingFile {
-  if (!existsSync(filePath)) {
-    return { version: 1, requests: [] };
+function parseChannel(value: unknown): PairingChannel | null {
+  if (typeof value !== "string") {
+    return null;
   }
-  try {
-    const parsed = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
-    if (parsed && typeof parsed === "object" && Array.isArray((parsed as PairingFile).requests)) {
-      return parsed as PairingFile;
-    }
-    return { version: 1, requests: [] };
-  } catch {
-    return { version: 1, requests: [] };
+  const channel = value.trim().toLowerCase();
+  return CHANNEL_FORMAT.test(channel) ? (channel as PairingChannel) : null;
+}
+
+function parseAccountId(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function parseListParams(params: unknown): ListParams | null {
+  if (typeof params !== "object" || params === null) {
+    return null;
   }
-}
-
-function writePairingFile(filePath: string, file: PairingFile): void {
-  writeFileSync(filePath, JSON.stringify(file, null, 2), { mode: 0o600 });
-}
-
-function readAllowFrom(filePath: string): string[] {
-  if (!existsSync(filePath)) {
-    return [];
+  const { channel, accountId } = params as Record<string, unknown>;
+  const parsed = parseChannel(channel);
+  if (!parsed) {
+    return null;
   }
-  try {
-    const parsed = JSON.parse(readFileSync(filePath, "utf8")) as unknown;
-    return Array.isArray(parsed) ? (parsed as string[]) : [];
-  } catch {
-    return [];
+  return { channel: parsed, accountId: parseAccountId(accountId) };
+}
+
+function parseMutateParams(params: unknown): MutateParams | null {
+  const base = parseListParams(params);
+  if (!base) {
+    return null;
   }
+  const { code } = params as Record<string, unknown>;
+  if (typeof code !== "string" || !code.trim()) {
+    return null;
+  }
+  return { ...base, code: code.trim() };
 }
 
-function writeAllowFrom(filePath: string, ids: string[]): void {
-  writeFileSync(filePath, JSON.stringify(ids, null, 2), { mode: 0o600 });
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function isValidChannel(channel: unknown): channel is DmPairingChannel {
-  return typeof channel === "string" && (SUPPORTED_CHANNELS as readonly string[]).includes(channel);
-}
-
-function isExpired(req: PairingRequest): boolean {
-  return Date.now() > new Date(req.createdAt).getTime() + PAIRING_TTL_MS;
-}
-
-function toPublicEntry(req: PairingRequest, channel: DmPairingChannel): DmPairingEntry {
+function toPublicEntry(request: PairingRequest, channel: PairingChannel): DmPairingEntry {
   return {
-    id: req.id,
-    code: req.code,
+    id: request.id,
+    code: request.code,
     channel,
-    createdAt: req.createdAt,
-    expiresAt: new Date(new Date(req.createdAt).getTime() + PAIRING_TTL_MS).toISOString(),
-    meta: req.meta,
+    createdAt: request.createdAt,
+    // Expiry is derived, never stored; the store prunes expired entries on read.
+    expiresAt: new Date(Date.parse(request.createdAt) + PAIRING_PENDING_TTL_MS).toISOString(),
+    ...(request.meta ? { meta: request.meta } : {}),
   };
 }
 
-// ---------------------------------------------------------------------------
-// Param validation
-// ---------------------------------------------------------------------------
-
-function validateListParams(params: unknown): { channel: DmPairingChannel } | null {
-  if (typeof params !== "object" || params === null) {
-    return null;
-  }
-  const { channel } = params as Record<string, unknown>;
-  if (!isValidChannel(channel)) {
-    return null;
-  }
-  return { channel };
+function invalidParams(message: string) {
+  return errorShape(ErrorCodes.INVALID_REQUEST, message);
 }
 
-function validateMutateParams(params: unknown): { channel: DmPairingChannel; code: string } | null {
-  if (typeof params !== "object" || params === null) {
-    return null;
-  }
-  const { channel, code } = params as Record<string, unknown>;
-  if (!isValidChannel(channel)) {
-    return null;
-  }
-  if (typeof code !== "string" || code.length === 0) {
-    return null;
-  }
-  return { channel, code: code.toUpperCase() };
+function codeNotFound(code: string, channel: string) {
+  return errorShape(
+    ErrorCodes.APPROVAL_NOT_FOUND,
+    `No pending pairing request with code ${code} on ${channel}`,
+  );
 }
-
-// ---------------------------------------------------------------------------
-// Handlers
-// NOTE: GatewayRequestHandler receives { params, respond, context } only.
-//       There is no broadcast parameter — that lives at the server
-//       infrastructure layer, not in individual handlers.
-// ---------------------------------------------------------------------------
 
 export const dmPairingHandlers: GatewayRequestHandlers = {
   /**
-   * dm.pair.list
-   * Scope: operator.pairing
-   *
-   * Params: { channel: DmPairingChannel }
+   * dm.pair.list — pending pairing requests for a channel.
+   * Params: { channel: string; accountId?: string }
    * Result: { pending: DmPairingEntry[] }
    */
-  "dm.pair.list": ({ params, respond, context }) => {
-    const validated = validateListParams(params);
-    if (!validated) {
-      respond(false, undefined, {
-        code: "INVALID_REQUEST",
-        message: `dm.pair.list requires { channel: one of ${SUPPORTED_CHANNELS.join(", ")} }`,
-      });
+  "dm.pair.list": async ({ params, respond }) => {
+    const parsed = parseListParams(params);
+    if (!parsed) {
+      respond(false, undefined, invalidParams("dm.pair.list requires { channel, accountId? }"));
       return;
     }
-
-    const stateDir = getStateDir(context);
-    const filePath = pairingFilePath(stateDir, validated.channel);
-    const file = readPairingFile(filePath);
-    const active = file.requests.filter((r) => !isExpired(r));
-
-    // Prune expired entries from disk on read
-    if (active.length !== file.requests.length) {
-      writePairingFile(filePath, { ...file, requests: active });
-    }
-
-    respond(true, {
-      pending: active.map((r) => toPublicEntry(r, validated.channel)),
-    });
+    const pending = await listChannelPairingRequests(parsed.channel, process.env, parsed.accountId);
+    respond(true, { pending: pending.map((request) => toPublicEntry(request, parsed.channel)) });
   },
 
   /**
-   * dm.pair.approve
-   * Scope: operator.pairing
-   *
-   * Params: { channel: DmPairingChannel; code: string }
+   * dm.pair.approve — approve a pending code; sender joins the channel allowlist.
+   * Params: { channel: string; code: string; accountId?: string }
    * Result: { ok: true; id: string }
    */
-  "dm.pair.approve": ({ params, respond, context }) => {
-    const validated = validateMutateParams(params);
-    if (!validated) {
-      respond(false, undefined, {
-        code: "INVALID_REQUEST",
-        message: "dm.pair.approve requires { channel, code }",
-      });
+  "dm.pair.approve": async ({ params, respond }) => {
+    const parsed = parseMutateParams(params);
+    if (!parsed) {
+      respond(
+        false,
+        undefined,
+        invalidParams("dm.pair.approve requires { channel, code, accountId? }"),
+      );
       return;
     }
-
-    const stateDir = getStateDir(context);
-    const pairingPath = pairingFilePath(stateDir, validated.channel);
-    const allowPath = allowFromFilePath(stateDir, validated.channel);
-
-    const file = readPairingFile(pairingPath);
-    const active = file.requests.filter((r) => !isExpired(r));
-    const idx = active.findIndex((r) => r.code === validated.code);
-
-    if (idx === -1) {
-      respond(false, undefined, {
-        code: "NOT_FOUND",
-        message: `No pending pairing request with code ${validated.code} on ${validated.channel}`,
-      });
+    const approved = await approveChannelPairingCode({
+      channel: parsed.channel,
+      code: parsed.code,
+      accountId: parsed.accountId,
+    });
+    if (!approved) {
+      respond(false, undefined, codeNotFound(parsed.code, parsed.channel));
       return;
     }
-
-    const [approved] = active.splice(idx, 1);
-
-    // Remove from pending file
-    writePairingFile(pairingPath, { ...file, requests: active });
-
-    // Add sender to allowFrom (deduplicated)
-    const allowFrom = readAllowFrom(allowPath);
-    if (!allowFrom.includes(approved.id)) {
-      allowFrom.push(approved.id);
-      writeAllowFrom(allowPath, allowFrom);
-    }
-
     respond(true, { ok: true, id: approved.id });
   },
 
   /**
-   * dm.pair.reject
-   * Scope: operator.pairing
-   *
-   * Params: { channel: DmPairingChannel; code: string }
+   * dm.pair.reject — discard a pending code without touching the allowlist.
+   * Params: { channel: string; code: string; accountId?: string }
    * Result: { ok: true; id: string }
    */
-  "dm.pair.reject": ({ params, respond, context }) => {
-    const validated = validateMutateParams(params);
-    if (!validated) {
-      respond(false, undefined, {
-        code: "INVALID_REQUEST",
-        message: "dm.pair.reject requires { channel, code }",
-      });
+  "dm.pair.reject": async ({ params, respond }) => {
+    const parsed = parseMutateParams(params);
+    if (!parsed) {
+      respond(
+        false,
+        undefined,
+        invalidParams("dm.pair.reject requires { channel, code, accountId? }"),
+      );
       return;
     }
-
-    const stateDir = getStateDir(context);
-    const pairingPath = pairingFilePath(stateDir, validated.channel);
-
-    const file = readPairingFile(pairingPath);
-    const active = file.requests.filter((r) => !isExpired(r));
-    const idx = active.findIndex((r) => r.code === validated.code);
-
-    if (idx === -1) {
-      respond(false, undefined, {
-        code: "NOT_FOUND",
-        message: `No pending pairing request with code ${validated.code} on ${validated.channel}`,
-      });
+    const rejected = await rejectChannelPairingCode({
+      channel: parsed.channel,
+      code: parsed.code,
+      accountId: parsed.accountId,
+    });
+    if (!rejected) {
+      respond(false, undefined, codeNotFound(parsed.code, parsed.channel));
       return;
     }
-
-    const [rejected] = active.splice(idx, 1);
-    writePairingFile(pairingPath, { ...file, requests: active });
-
     respond(true, { ok: true, id: rejected.id });
   },
 };

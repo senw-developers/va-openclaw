@@ -30,6 +30,7 @@ import {
   readLegacyChannelAllowFromStore,
   readLegacyChannelAllowFromStoreSync,
   readChannelAllowFromStoreSync,
+  rejectChannelPairingCode,
   removeChannelAllowFromStoreEntry,
   upsertChannelPairingRequest,
 } from "./pairing-store.js";
@@ -759,6 +760,63 @@ describe("pairing store", () => {
           readAllowFrom: variant.readAllowFrom,
         });
       }
+    });
+  });
+});
+
+describe("rejectChannelPairingCode", () => {
+  it("removes only the rejected request and returns its id", async () => {
+    await withTempStateDir(async (_stateDir, env) => {
+      const kept = await createTelegramPairingRequest(DEFAULT_ACCOUNT_ID, env, "12345");
+      const target = await createTelegramPairingRequest(DEFAULT_ACCOUNT_ID, env, "67890");
+
+      const rejected = await rejectChannelPairingCode({
+        channel: "telegram",
+        code: target.code,
+        env,
+      });
+
+      expect(rejected?.id).toBe("67890");
+      const remaining = await listChannelPairingRequests("telegram", env);
+      const request = requireFirstPairingRequest(remaining);
+      expect(request.id).toBe("12345");
+      expect(request.code).toBe(kept.code);
+    });
+  });
+
+  it("does not touch allowFrom entries", async () => {
+    await withTempStateDir(async (stateDir, env) => {
+      await addChannelAllowFromStoreEntry({
+        channel: "telegram",
+        entry: "1001",
+        accountId: DEFAULT_ACCOUNT_ID,
+        env,
+      });
+      const target = await createTelegramPairingRequest(DEFAULT_ACCOUNT_ID, env, "67890");
+
+      const rejected = await rejectChannelPairingCode({
+        channel: "telegram",
+        code: target.code,
+        env,
+      });
+
+      expect(rejected?.id).toBe("67890");
+      clearPairingAllowFromReadCacheForTest();
+      const allowFrom = await readChannelAllowFromStore("telegram", env, DEFAULT_ACCOUNT_ID);
+      expect(allowFrom).toContain("1001");
+      expect(allowFrom).not.toContain("67890");
+    });
+  });
+
+  it("returns null for unknown or blank codes without mutating the store", async () => {
+    await withTempStateDir(async (_stateDir, env) => {
+      await createTelegramPairingRequest(DEFAULT_ACCOUNT_ID, env, "12345");
+
+      expect(await rejectChannelPairingCode({ channel: "telegram", code: "ZZZZZZZZ", env })).toBe(
+        null,
+      );
+      expect(await rejectChannelPairingCode({ channel: "telegram", code: "  ", env })).toBe(null);
+      expect(await listChannelPairingRequests("telegram", env)).toHaveLength(1);
     });
   });
 });
