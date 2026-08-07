@@ -1,18 +1,38 @@
+import { OP_OPERATIONS } from "./nabu-1password.constants.js";
+
 /**
- * Plugin config shape — mirrors plugins.entries.nabu-1password.config
- * in openclaw.json. Pushed by the Nabu NestJS backend via config.patch
- * over WebSocket RPC.
+ * Plugin config shape — mirrors plugins.entries.nabu-1password.config in
+ * openclaw.json. apiToken is the per-deployment skill bearer; apiBaseUrl is the
+ * Docker-internal NestJS base.
  */
-export interface NabuOnePasswordConfig {
-  /** Opaque per-org bearer issued by the OnePassword module on Nabu backend. */
+export interface Nabu1PasswordConfig {
   apiToken: string;
-  /** NestJS backend base URL — Docker-internal (default: http://app:6001). */
   apiBaseUrl?: string;
-  /** How often to re-pull the ops_ token from NestJS. Default 6h. */
-  refreshIntervalMs?: number;
 }
 
-/** Response shape of POST /api/v1/onepassword/token on the Nabu backend. */
-export interface NabuOnePasswordTokenResponse {
+/**
+ * Request body POSTed to the access-token endpoint. userId is the trusted
+ * requesterSenderId coerced to the backend's integer user id; channel is the
+ * trusted gateway channel id. Org rides the x-organization-id header
+ * (env-derived, one gateway stack per org — G1), not this body.
+ */
+export interface OpTokenRequest {
+  userId: number;
+  channel: string;
+}
+
+/** Response shape of POST /api/v1/onepassword/access-token. token starts with "ops_". */
+export interface OpTokenResponse {
   token: string;
+}
+
+export type OpOperation = (typeof OP_OPERATIONS)[number];
+
+/** Tool params after schema validation, passed to the argv builder. */
+export interface Nabu1PasswordParams {
+  operation: OpOperation;
+  reference?: string;
+  item?: string;
+  vault?: string;
+  fields?: string[];
 }

@@ -1,84 +1,58 @@
 ---
 name: nabu-1password
-description: Read secrets from the tenant's 1Password vault using the op CLI. Service-account auth is preconfigured by the nabu-1password plugin — use op commands directly. Do NOT run `op signin`, do NOT use tmux, do NOT try the desktop app.
-metadata: { "openclaw": { "emoji": "🔐", "requires": { "bins": ["op"] } } }
+description: Resolve 1Password secrets and list items/vaults for the current end user. Auth is brokered server-side — call the nabu_1password tool, do NOT run `op signin` and do NOT ask the user for a token. Read-only — read secret references, get/list items, list vaults; no create/edit/delete/rotate.
+metadata:
+  {
+    "openclaw":
+      {
+        "emoji": "🔐",
+        "requires":
+          { "bins": ["op"], "config": ["plugins.entries.nabu-1password.config.apiToken"] },
+      },
+  }
 ---
 
-# 1Password (headless, service-account)
+# 1Password (read-only)
 
-The `nabu-1password` plugin has already set `OP_SERVICE_ACCOUNT_TOKEN` in this
-process. `op` commands authenticate automatically. This is a headless Docker
-container — there is no 1Password desktop app, no keyring, no tmux signin
-flow.
+Use the `nabu_1password` tool to read the current user's 1Password secrets. The
+plugin brokers a per-user service-account token automatically — never ask the
+user for credentials and never run `op signin`.
+
+## Tool
+
+`nabu_1password({ operation, reference?, item?, vault?, fields? })`
+
+| operation    | args                                  | returns                                |
+| ------------ | ------------------------------------- | -------------------------------------- |
+| `read`       | `reference: "op://vault/item/field"`  | `{ ok, value }` — the plaintext secret |
+| `item-get`   | `item` (+ optional `vault`, `fields`) | `{ ok, result }` — item JSON           |
+| `item-list`  | optional `vault`                      | `{ ok, result }` — array of items      |
+| `vault-list` | none                                  | `{ ok, result }` — array of vaults     |
+
+### Examples
+
+```
+nabu_1password({ operation: "read", reference: "op://NABU/Stripe/credential" })
+nabu_1password({ operation: "item-get", item: "Stripe", vault: "NABU", fields: ["username", "credential"] })
+nabu_1password({ operation: "item-list", vault: "NABU" })
+nabu_1password({ operation: "vault-list" })
+```
+
+## Result envelope
+
+- Success: `{ operation, ok: true, value | result, truncated? }`.
+- Failure: `{ operation, ok: false, error, code?, stderr? }`.
 
 ## Do NOT
 
-- Do **not** run `op signin`, `op account add`, or any interactive signin.
-- Do **not** use tmux. Service-account tokens are stateless.
-- Do **not** ask the user for credentials — they are configured on the Nabu
-  dashboard and injected by the plugin.
-
-## Common commands
-
-- **Read a secret:**
-
-  ```
-  op read "op://VaultName/ItemName/password"
-  ```
-
-  Returns the secret value. Common fields: `password`, `credential`, `api_key`.
-
-- **Prefer UUIDs over names when known** — 1 API call instead of 3:
-
-  ```
-  op read "op://{vault-uuid}/{item-uuid}/password"
-  ```
-
-- **List accessible vaults:**
-
-  ```
-  op vault list
-  ```
-
-- **List items in a vault:**
-
-  ```
-  op item list --vault "VaultName" --format json
-  ```
-
-- **Inspect an item's full structure:**
-
-  ```
-  op item get "ItemName" --vault "VaultName" --format json
-  ```
-
-- **Render a template with many refs in one call** (much faster than a loop):
-
-  ```
-  op inject -i template.tpl -o config.yml
-  ```
-
-- **Run a command with secrets injected as env vars:**
-  ```
-  op run --env-file=.env.template -- node app.js
-  ```
-
-## Constraints
-
-- **Vault grants are fixed at token creation.** If a needed vault isn't in
-  `op vault list`, the tenant must issue a new service-account token in the
-  1Password web console with that vault granted — rotation alone does not
-  re-scope.
-- **Personal / Private / Employee vaults are never accessible** to service
-  accounts. Only explicitly shared vaults.
-- **Rate limits (Business tier):** 10,000 reads/hour, 50,000 requests/day.
-  Each `op read` with item/vault names is 3 API calls; prefer UUIDs or
-  `op inject` / `op run` when resolving several refs in one task.
+- Do not run `op signin`, use the desktop app, or ask the user for a token — auth is automatic and per-user.
+- Do not attempt create / edit / delete / rotate — this tool is read-only.
+- Treat retrieved secret values as sensitive: use them for the task at hand, do
+  not echo them more than necessary, and never paste them into untrusted destinations.
 
 ## Errors
 
-| Symptom                           | Likely cause                | Action                                                              |
-| --------------------------------- | --------------------------- | ------------------------------------------------------------------- |
-| `[ERROR] authentication required` | Token missing or revoked    | Tell the user to open the Nabu dashboard → Integrations → 1Password |
-| `[ERROR] "X" isn't an item`       | Wrong vault/item/field path | Verify with `op item list --vault "..."`                            |
-| `[ERROR] 429 Too Many Requests`   | Rate limit hit              | Wait ~15 minutes; batch future reads with `op inject`               |
+- `... hasn't connected 1Password` — the user must connect 1Password in the Simon Says dashboard.
+- `not found` — re-check the item / vault name or the `op://` reference.
+- `op auth failed` — the user's 1Password token lacks access to that vault/item, or needs reconnecting.
+- `op timed out` — retry once.
