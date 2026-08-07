@@ -11,17 +11,16 @@ import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import * as path from "node:path";
-import { SessionManager } from "../agents/sessions/session-manager.js";
 import { extensionForMime } from "@openclaw/media-core/mime";
 import { resolveIntegerOption } from "@openclaw/normalization-core/number-coercion";
 import { isClientToolNameConflictError } from "../agents/agent-tool-definition-adapter.js";
 import type { ImageContent } from "../agents/command/types.js";
 import type { ClientToolDefinition } from "../agents/embedded-agent-runner/run/params.js";
-import { getMediaUploader, type MediaUploadResult } from "../plugin-sdk/media-uploader.js";
-import { resolveSessionFilePath } from "../config/sessions/paths.js";
+import { SessionManager } from "../agents/sessions/session-manager.js";
 import { createDefaultDeps } from "../cli/deps.js";
 import type { CliDeps } from "../cli/deps.types.js";
 import { agentCommandFromIngress } from "../commands/agent.js";
+import { resolveSessionFilePath } from "../config/sessions/paths.js";
 import type { GatewayHttpResponsesConfig } from "../config/types.gateway.js";
 import { emitAgentEvent, onAgentEvent } from "../infra/agent-events.js";
 import { logWarn } from "../logger.js";
@@ -39,6 +38,7 @@ import {
   type InputImageLimits,
   type InputImageSource,
 } from "../media/input-files.js";
+import { getMediaUploader, type MediaUploadResult } from "../plugin-sdk/media-uploader.js";
 import { defaultRuntime } from "../runtime.js";
 import { resolveAssistantStreamDeltaText } from "./agent-event-assistant-text.js";
 import type { AuthRateLimiter } from "./auth-rate-limit.js";
@@ -49,14 +49,15 @@ import {
   gatherFileRefsForMessages,
   stripMarkdownImages,
 } from "./chat-file-refs.js";
+import { resolveOpenAiCompatibleHttpSenderIsOwner } from "./http-auth-utils.js";
 import { sendJson, setSseHeaders, watchClientDisconnect, writeDone } from "./http-common.js";
-import { loadSessionEntry, readSessionMessagesAsync } from "./session-utils.js";
 import { handleGatewayPostJsonEndpoint } from "./http-endpoint-helpers.js";
 import {
   getBearerToken,
   getHeader,
   resolveAgentIdForRequest,
   resolveGatewayRequestContext,
+  resolveIngressSenderId,
   resolveOpenAiCompatModelOverride,
   resolveOpenAiCompatibleHttpOperatorScopes,
 } from "./http-utils.js";
@@ -79,6 +80,7 @@ import {
 import { wrapUntrustedFileContent } from "./openresponses-file-content.js";
 import { buildAgentPrompt } from "./openresponses-prompt.js";
 import { createAssistantOutputItem, createFunctionCallOutputItem } from "./openresponses-shape.js";
+import { loadSessionEntry, readSessionMessagesAsync } from "./session-utils.js";
 
 type OpenResponsesHttpOptions = {
   auth: ResolvedGatewayAuth;
@@ -476,6 +478,7 @@ class MarkdownImageDeltaStripper {
 async function resolveTurnFileRefs(
   sessionKey: string,
   turnInboundFileIds: ReadonlyArray<number>,
+  identity: { userId?: string },
 ): Promise<unknown[]> {
   try {
     const { entry, storePath } = loadSessionEntry(sessionKey);
@@ -506,6 +509,7 @@ async function resolveTurnFileRefs(
     return await gatherFileRefsForMessages(turnMessages, {
       requestId: `openresponses-http:${sessionKey}`,
       userAttachments: turnUserAttachments,
+      ...(identity.userId ? { userId: identity.userId } : {}),
     });
   } catch {
     return [];
@@ -516,9 +520,14 @@ async function uploadInboundImage(
   image: ImageContent,
   responseId: string,
   index: number,
+  identity: { userId?: string },
 ): Promise<MediaUploadResult | null> {
   const uploader = getMediaUploader();
   if (!uploader) return null;
+  // Per-user isolation (D14): refuse to mint a Files-API upload without a
+  // resolvable owner. senw-core returns 401 when ownerUserId is non-numeric,
+  // so this gate is the first fail-closed barrier (no shared uploads).
+  if (!identity.userId) return null;
   try {
     const bytes = Buffer.from(image.data, "base64");
     if (bytes.length === 0) return null;
@@ -531,6 +540,7 @@ async function uploadInboundImage(
       responseId,
       mediaIndex: index,
       source: "openresponses-http:user-upload",
+      userId: identity.userId,
     });
   } catch (err) {
     logWarn(`openresponses: input_image upload failed: ${(err as Error).message ?? String(err)}`);
@@ -561,7 +571,9 @@ function appendUserAttachmentEntryToSession(
       responseId,
     });
   } catch (err) {
-    logWarn(`openresponses: failed to append user-attachment entry: ${(err as Error).message ?? String(err)}`);
+    logWarn(
+      `openresponses: failed to append user-attachment entry: ${(err as Error).message ?? String(err)}`,
+    );
   }
 }
 
@@ -581,6 +593,7 @@ async function runResponsesAgentCommand(params: {
    * plugins (e.g. nabu-google-workspace) can resolve the right credentials.
    */
   senderId?: string;
+  senderIsOwner: boolean;
   deps: CliDeps;
   abortSignal?: AbortSignal;
 }) {
@@ -597,6 +610,7 @@ async function runResponsesAgentCommand(params: {
       deliver: false,
       messageChannel: params.messageChannel,
       senderId: params.senderId,
+      senderIsOwner: params.senderIsOwner,
       bestEffortDeliver: false,
       allowModelOverride: true,
       abortSignal: params.abortSignal,
@@ -650,6 +664,10 @@ export async function handleOpenResponsesHttpRequest(
   const stream = Boolean(payload.stream);
   const model = payload.model;
   const user = payload.user;
+  // Per-user identity for Files-API ownership. Used by inbound image uploads
+  // and turn fileRefs enrichment (D14). Declared here so it precedes the input
+  // image processing loop, which calls uploadInboundImage with {userId}.
+  const ownerUserId = user?.trim() || undefined;
   const agentId = resolveAgentIdForRequest({ req, model });
   const { modelOverride, errorMessage: modelError } = await resolveOpenAiCompatModelOverride({
     req,
@@ -714,7 +732,10 @@ export async function handleOpenResponsesHttpRequest(
                     };
               const image = await extractImageContentFromSource(imageSource, limits.images);
               images.push(image);
-              const uploaded = await uploadInboundImage(image, responseId, images.length - 1);
+              // HTTP per-user upload path: relies on senw-core 401 to fail-closed when ownerUserId is non-numeric.
+              const uploaded = await uploadInboundImage(image, responseId, images.length - 1, {
+                userId: ownerUserId,
+              });
               if (uploaded) inboundUploadedFileIds.push(uploaded.fileId);
               continue;
             }
@@ -812,6 +833,9 @@ export async function handleOpenResponsesHttpRequest(
     defaultMessageChannel: "webchat",
     useMessageChannelHeader: true,
   });
+  // On the compat surface, shared-secret bearer auth is treated as an owner
+  // sender so owner-only tool policy matches the documented contract.
+  const senderIsOwner = resolveOpenAiCompatibleHttpSenderIsOwner(req, handled.requestAuth);
   const responseSessionScope = createResponseSessionScope({
     req,
     auth: opts.auth,
@@ -884,7 +908,8 @@ export async function handleOpenResponsesHttpRequest(
         sessionKey,
         runId: responseId,
         messageChannel,
-        senderId: user?.trim() || undefined,
+        senderId: resolveIngressSenderId(user),
+        senderIsOwner,
         deps,
         abortSignal: abortController.signal,
       });
@@ -969,7 +994,9 @@ export async function handleOpenResponsesHttpRequest(
 
       const content = joinPayloadsWithMedia(payloads) || "No response from OpenClaw.";
 
-      const turnFileRefs = await resolveTurnFileRefs(sessionKey, inboundUploadedFileIds);
+      const turnFileRefs = await resolveTurnFileRefs(sessionKey, inboundUploadedFileIds, {
+        userId: ownerUserId,
+      });
       const finalText = turnFileRefs.length > 0 ? stripMarkdownImages(content) : content;
 
       const response = createResponseResource({
@@ -1068,7 +1095,9 @@ export async function handleOpenResponsesHttpRequest(
     stopWatchingDisconnect();
     unsubscribe();
 
-    const turnFileRefs = await resolveTurnFileRefs(sessionKey, inboundUploadedFileIds);
+    const turnFileRefs = await resolveTurnFileRefs(sessionKey, inboundUploadedFileIds, {
+      userId: ownerUserId,
+    });
     const finalText =
       turnFileRefs.length > 0
         ? stripMarkdownImages(finalizeRequested.text)
@@ -1231,7 +1260,8 @@ export async function handleOpenResponsesHttpRequest(
         sessionKey,
         runId: responseId,
         messageChannel,
-        senderId: user?.trim() || undefined,
+        senderId: resolveIngressSenderId(user),
+        senderIsOwner,
         deps,
         abortSignal: abortController.signal,
       });

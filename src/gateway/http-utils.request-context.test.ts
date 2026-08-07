@@ -8,6 +8,7 @@ import {
   resolveOpenAiCompatibleHttpSenderIsOwner,
   resolveGatewayRequestContext,
   resolveHttpSenderIsOwner,
+  resolveIngressSenderId,
   resolveTrustedHttpOperatorScopes,
 } from "./http-utils.js";
 
@@ -186,5 +187,17 @@ describe("resolveOpenAiCompatibleHttpSenderIsOwner", () => {
         { authMethod: "trusted-proxy", trustDeclaredOperatorScopes: true },
       ),
     ).toBe(true);
+  });
+});
+
+describe("resolveIngressSenderId", () => {
+  it("trims and passes through a user id", () => {
+    expect(resolveIngressSenderId(" 42 ")).toBe("42");
+  });
+
+  it("returns undefined for empty or missing input", () => {
+    expect(resolveIngressSenderId("")).toBe(undefined);
+    expect(resolveIngressSenderId("   ")).toBe(undefined);
+    expect(resolveIngressSenderId(undefined)).toBe(undefined);
   });
 });

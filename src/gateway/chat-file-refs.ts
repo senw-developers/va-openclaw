@@ -9,6 +9,12 @@ import {
 // user-role message in the transcript.
 export const USER_ATTACHMENT_CUSTOM_TYPE = "nabu-file-attachment";
 
+// Owner identity for resolve authorization (userId-only; resolver skipped if absent).
+export type ResolveIdentityOpts = {
+  requestId?: string;
+  userId?: string;
+};
+
 // Walks raw JSONL. User messages do not carry details.nabuFileIds, so inbound
 // uploads are surfaced via sibling custom entries attributed positionally.
 export function readUserAttachmentFileIdsByMessage(filePath: string): Map<string, number[]> {
@@ -63,9 +69,17 @@ export function readUserAttachmentFileIdsByMessage(filePath: string): Map<string
 // real signedUrl in fileRefs[]; strip it so the FE renders from fileRefs only.
 export const MARKDOWN_IMAGE_RE = /!\[[^\]]*\]\([^)]+\)/g;
 
+// Final-reply media lines from generated-media completions; the image renders
+// from fileRefs[] on the media-completion card, not from this raw URL text.
+const MEDIA_LINE_RE = /^MEDIA:\S+$/gm;
+
 export function stripMarkdownImages(text: string): string {
-  if (!text || !text.includes("![")) return text;
-  return text.replace(MARKDOWN_IMAGE_RE, "").replace(/\n{3,}/g, "\n\n").trim();
+  if (!text || (!text.includes("![") && !text.includes("MEDIA:"))) return text;
+  return text
+    .replace(MARKDOWN_IMAGE_RE, "")
+    .replace(MEDIA_LINE_RE, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function stripMarkdownImagesFromAssistantText(message: unknown): unknown {
@@ -74,7 +88,7 @@ function stripMarkdownImagesFromAssistantText(message: unknown): unknown {
   if (role !== "assistant") return message;
   const content = (message as { content?: unknown }).content;
   if (!Array.isArray(content)) {
-    if (typeof content === "string" && content.includes("![")) {
+    if (typeof content === "string" && (content.includes("![") || content.includes("MEDIA:"))) {
       return {
         ...(message as Record<string, unknown>),
         content: stripMarkdownImages(content),
@@ -87,7 +101,9 @@ function stripMarkdownImagesFromAssistantText(message: unknown): unknown {
     if (!block || typeof block !== "object") return block;
     if ((block as { type?: unknown }).type !== "text") return block;
     const text = (block as { text?: unknown }).text;
-    if (typeof text !== "string" || !text.includes("![")) return block;
+    if (typeof text !== "string" || (!text.includes("![") && !text.includes("MEDIA:"))) {
+      return block;
+    }
     const stripped = stripMarkdownImages(text);
     if (stripped === text) return block;
     changed = true;
@@ -99,7 +115,7 @@ function stripMarkdownImagesFromAssistantText(message: unknown): unknown {
 
 export async function enrichMessagesWithFileRefs(
   messages: ReadonlyArray<unknown>,
-  opts?: { requestId?: string; userAttachments?: Map<string, number[]> },
+  opts?: ResolveIdentityOpts & { userAttachments?: Map<string, number[]> },
 ): Promise<unknown[]> {
   if (messages.length === 0) return messages as unknown[];
 
@@ -112,7 +128,9 @@ export async function enrichMessagesWithFileRefs(
   const userAttachments = opts?.userAttachments;
   for (let i = 0; i < messages.length; i++) {
     const fromDetails = extractNabuFileIds(messages[i]);
-    const fromAttachments = userAttachments ? extractUserAttachmentIds(messages[i], userAttachments) : [];
+    const fromAttachments = userAttachments
+      ? extractUserAttachmentIds(messages[i], userAttachments)
+      : [];
     const ids = dedupNumbers([...fromDetails, ...fromAttachments]);
     idsPerIndex[i] = ids;
     if (ids.length > 0) {
@@ -143,7 +161,7 @@ export async function enrichMessagesWithFileRefs(
 
 export async function enrichMessageWithFileRefs(
   message: unknown,
-  opts?: { requestId?: string },
+  opts?: ResolveIdentityOpts,
 ): Promise<unknown> {
   const stripped = stripMarkdownImagesFromAssistantText(message);
   const ids = extractNabuFileIds(stripped);
@@ -164,7 +182,7 @@ export async function enrichMessageWithFileRefs(
 // OpenResponses HTTP that surface a single fileRefs field on the response.
 export async function gatherFileRefsForMessages(
   messages: ReadonlyArray<unknown>,
-  opts?: { requestId?: string; userAttachments?: Map<string, number[]> },
+  opts?: ResolveIdentityOpts & { userAttachments?: Map<string, number[]> },
 ): Promise<FileRef[]> {
   if (messages.length === 0 && !(opts?.userAttachments && opts.userAttachments.size > 0)) return [];
   const resolver = getMediaResolver();
@@ -225,14 +243,17 @@ function extractNabuFileIds(message: unknown): number[] {
 async function batchResolve(
   resolver: MediaResolver,
   fileIds: ReadonlyArray<number>,
-  opts?: { requestId?: string },
+  opts?: ResolveIdentityOpts,
 ): Promise<Map<number, FileRef>> {
   const map = new Map<number, FileRef>();
   if (fileIds.length === 0) return map;
+  // No owner → resolver would refuse; skip so reads degrade instead of throwing.
+  if (!opts?.userId) return map;
   try {
     const refs = await resolver({
       fileIds,
-      ...(opts?.requestId ? { requestId: opts.requestId } : {}),
+      userId: opts.userId,
+      ...(opts.requestId ? { requestId: opts.requestId } : {}),
     });
     for (const ref of refs) map.set(ref.fileId, ref);
   } catch {
