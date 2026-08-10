@@ -72,6 +72,30 @@ fail-closed at S6, but the config-interpolation path (cf-aig-metadata header)
 still fails open. Close with a doctor/startup check that the literal
 placeholder never reaches an outbound header.
 
+### D-SEC-3 — credit latch does not gate gateway ingress (confirmed 2026-08-10)
+
+`nabu-gateway` implements the credit/suspension latch as a `before_agent_reply`
+hook. That hook has three call sites: two on the runner path gated to
+`trigger === "cron"`, and one in the auto-reply resolver (channels/DM). Gateway
+ingress — HTTP `/v1/responses`, `/v1/chat/completions`, WS `chat.send`, node
+events — reaches the runners directly with `trigger: "user"` hardcoded
+(`src/agents/command/attempt-execution.ts:607`, `:692`), so the latch never
+fires. A suspended organization can still spend through the API path; what
+actually stops it today is the backend stopping the container, and if that stop
+fails the org is marked suspended while still serving. Options and blast radius
+are recorded in memo `bbf338e6012b`; the fix is a core behavior change (every
+plugin registering the hook would begin seeing user turns) and needs a
+maintainer decision, not a drive-by.
+
+### R-5 — metering is zero by decision (2026-08-10)
+
+Backend metering is Cloudflare-AI-Gateway-log-only, and the seed's primary
+(`openai/gpt-5.5`) plus fallback (`minimax`) both bypass Cloudflare, so no log
+exists and nothing decrements. Operator accepted this explicitly; the seed
+model choice stands. Closing it later means metering from the `llm_output`
+payload we already send (provider-agnostic token counts, no cost) rather than
+changing the model. Backend notified: memo `223c5bc49ecf`.
+
 ## Backend-gated contract gaps (verified in va-core-nest 2026-08-10)
 
 Findings from a read-only sweep of the sibling backend at `../va-core-nest`
