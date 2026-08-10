@@ -18,6 +18,7 @@ export const BOUNDARY_CHECKS = [
   ["lint:tmp:no-raw-channel-fetch", "pnpm", ["run", "lint:tmp:no-raw-channel-fetch"]],
   ["lint:tmp:no-raw-http2-imports", "pnpm", ["run", "lint:tmp:no-raw-http2-imports"]],
   ["lint:agent:ingress-owner", "pnpm", ["run", "lint:agent:ingress-owner"]],
+  ["lint:fork:graft-exports", "pnpm", ["run", "lint:fork:graft-exports"]],
   [
     "lint:plugins:no-register-http-handler",
     "pnpm",

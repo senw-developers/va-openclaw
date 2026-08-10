@@ -6,6 +6,7 @@ import { definePluginEntry, type OpenClawPluginApi } from "openclaw/plugin-sdk/p
 // ---------------------------------------------------------------------------
 interface NabuGatewayConfig {
   apiBaseUrl: string;
+  apiToken: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -50,18 +51,17 @@ interface AgentHookContext {
   channelId?: string;
 }
 
-// ---------------------------------------------------------------------------
-// Read live config from disk on every call (same pattern as nabu-email).
-//
-// api.pluginConfig is a startup snapshot and won't reflect runtime
-// config.patch updates. api.runtime.config.loadConfig() re-reads the
-// file so changes take effect without a gateway restart.
-// ---------------------------------------------------------------------------
+/**
+ * Live config per call: current() returns the runtime snapshot that gateway
+ * config.patch refreshes — the token-rotation/kill-switch path (T8). Direct
+ * file edits do NOT propagate; rotation must ride config.patch.
+ */
 function getLivePluginConfig(api: OpenClawPluginApi): NabuGatewayConfig {
-  const cfg = api.runtime.config.loadConfig();
+  const cfg = api.runtime.config.current();
   const pluginEntry = (cfg as any)?.plugins?.entries?.["nabu-gateway"]?.config;
   return {
     apiBaseUrl: pluginEntry?.apiBaseUrl ?? "http://app:6001",
+    apiToken: pluginEntry?.apiToken ?? "",
   };
 }
 
@@ -70,7 +70,7 @@ function getLivePluginConfig(api: OpenClawPluginApi): NabuGatewayConfig {
  * Defaults to true so the agent runs normally if the field is missing.
  */
 function isNabuEnabled(api: OpenClawPluginApi): boolean {
-  const cfg = api.runtime.config.loadConfig();
+  const cfg = api.runtime.config.current();
   const pluginEntry = (cfg as any)?.plugins?.entries?.["nabu-gateway"]?.config;
   return pluginEntry?.enabled !== false;
 }
@@ -95,6 +95,10 @@ function postUsageEvent(cfg: NabuGatewayConfig, body: Record<string, unknown>): 
       headers: {
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(payload),
+        // Channel auth — same platform skill token as nabu-email. senw-core's
+        // NabuSkillTokenGuard constant-time-compares sha256(token) against
+        // NABU_SKILL_TOKEN_HASH. Without it every ingest 401s.
+        "x-skill-token": cfg.apiToken,
       },
       timeout: 5_000,
     },

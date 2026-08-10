@@ -79,7 +79,7 @@ import { isPluginOwnedSessionBindingRecord } from "../../plugins/conversation-bi
 import { normalizeAgentId, scopeLegacySessionKeyToAgent } from "../../routing/session-key.js";
 import { normalizeInputProvenance, type InputProvenance } from "../../sessions/input-provenance.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
-import { parseAgentSessionKey } from "../../sessions/session-key-utils.js";
+import { parseAgentSessionKey, parseSessionOwner } from "../../sessions/session-key-utils.js";
 import {
   createUserTurnTranscriptRecorder,
   type UserTurnInput,
@@ -122,13 +122,13 @@ import {
   projectRecentChatDisplayMessages,
   resolveEffectiveChatHistoryMaxChars,
 } from "../chat-display-projection.js";
-import { sanitizeChatSendMessageInput } from "../chat-input-sanitize.js";
-import { stripEnvelopeFromMessage } from "../chat-sanitize.js";
-import { augmentChatHistoryWithCliSessionImports } from "../cli-session-history.js";
 import {
   enrichMessagesWithFileRefs,
   readUserAttachmentFileIdsByMessage,
 } from "../chat-file-refs.js";
+import { sanitizeChatSendMessageInput } from "../chat-input-sanitize.js";
+import { stripEnvelopeFromMessage, stripEnvelopeFromMessages } from "../chat-sanitize.js";
+import { augmentChatHistoryWithCliSessionImports } from "../cli-session-history.js";
 import { isSuppressedControlReplyText } from "../control-reply-text.js";
 import {
   attachManagedOutgoingImagesToMessage,
@@ -2479,26 +2479,29 @@ async function handleChatHistoryRequest({
     rawMessages,
     typeof entry?.sessionStartedAt === "number" ? entry.sessionStartedAt : undefined,
   );
-  const effectiveMaxChars = resolveEffectiveChatHistoryMaxChars(cfg, maxChars);
-  // Nabu Files-API: enrich with uploaded-file refs BEFORE
-  // projectRecentChatDisplayMessages strips details.nabuFileIds. Applies to
-  // both chat.history and chat.startup (both route through here).
+  // Nabu Files-API enrichment + envelope strip: enrich BEFORE projection because
+  // projectRecentChatDisplayMessages strips details.nabuFileIds, and we need the
+  // owner-scoped userId from the session key for per-user signed URLs (D22).
   const userAttachments =
     sessionId && storePath
       ? readUserAttachmentFileIdsByMessage(
           resolveSessionFilePath(
             sessionId,
             entry?.sessionFile ? { sessionFile: entry.sessionFile } : undefined,
-            storePath ? { sessionsDir: path.dirname(storePath) } : undefined,
+            { sessionsDir: path.dirname(storePath) },
           ),
         )
       : undefined;
+  const owner = parseSessionOwner(sessionKey);
   const enrichedMessages = await enrichMessagesWithFileRefs(recencyFilteredMessages, {
     requestId: `chat.history:${sessionKey}`,
     ...(userAttachments ? { userAttachments } : {}),
+    ...(owner ? { userId: owner.userId } : {}),
   });
+  const strippedMessages = stripEnvelopeFromMessages(enrichedMessages);
+  const effectiveMaxChars = resolveEffectiveChatHistoryMaxChars(cfg, maxChars);
   const normalized = augmentChatHistoryWithCanvasBlocks(
-    projectRecentChatDisplayMessages(enrichedMessages, {
+    projectRecentChatDisplayMessages(strippedMessages, {
       maxChars: effectiveMaxChars,
       maxMessages: max,
     }),

@@ -1,24 +1,26 @@
 {
   "id": "nabu-1password",
+  "activation": {
+    "onStartup": true
+  },
   "name": "@va-team/nabu-1password",
-  "description": "Injects the tenant's 1Password service-account token into gateway process.env so op CLI works transparently via exec.",
+  "description": "Per-user 1Password read access. Brokers a per-user 1Password service-account token from the Nabu backend per invocation and runs the native op CLI in a scoped child process. Exposes a single read-only passthrough tool the agent uses to resolve secret references and list items/vaults.",
   "skills": ["./skills"],
+  "contracts": {
+    "tools": ["nabu_1password"]
+  },
   "enabledByDefault": false,
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
     "properties": {
       "apiToken": {
-        "type": "string",
-        "description": "Per-organization skill bearer issued by the OnePassword module on Nabu backend"
+        "type": ["string", "object"],
+        "description": "Per-organization skill bearer issued by the OnePassword module on the Nabu backend (sent as x-skill-token; requests also carry env-derived x-organization-id). Accepts either a literal string or a SecretRef object {source, provider, id} resolved from env."
       },
       "apiBaseUrl": {
         "type": "string",
-        "description": "NestJS backend base URL — Docker-internal"
-      },
-      "refreshIntervalMs": {
-        "type": "number",
-        "description": "How often to re-pull the ops_ token from NestJS. Default 6h."
+        "description": "NestJS backend base URL — Docker-internal (default http://app:6001)."
       }
     }
   },
@@ -30,10 +32,6 @@
     "apiBaseUrl": {
       "label": "API Base URL",
       "placeholder": "http://app:6001"
-    },
-    "refreshIntervalMs": {
-      "label": "Refresh interval (ms)",
-      "placeholder": "21600000"
     }
   }
 }

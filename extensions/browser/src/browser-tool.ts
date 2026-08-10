@@ -836,11 +836,15 @@ export function createBrowserTool(opts?: {
                 content: [{ type: "text", text }],
                 details: {
                   ...(result as Record<string, unknown>),
-                  // Do NOT include details.media here — the vision path returns
-                  // a text description as the deliverable output. Exposing the raw
-                  // screenshot as media would cause channel delivery to auto-send
-                  // potentially sensitive page content. The local screenshot file
-                  // is still referenced in result.path for diagnostic purposes.
+                  // Nabu fork (2026-06-18, all-channels decision): surface the
+                  // screenshot via details.media so the nabu-media-upload
+                  // middleware uploads it and the web frontend / channels render
+                  // the actual image. Mirrors image_generate and the
+                  // vision-failure fallback below. The model still receives the
+                  // text description above as its content; this field only drives
+                  // media delivery, not model vision. (Upstream omitted this to
+                  // avoid auto-sending page content; product decision is to deliver.)
+                  media: { mediaUrl: screenshotPath },
                   vision: {
                     provider: described.provider,
                     model: described.model,

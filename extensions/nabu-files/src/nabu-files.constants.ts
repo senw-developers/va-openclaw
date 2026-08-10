@@ -7,5 +7,7 @@ export const DEFAULT_MAX_CONCURRENT_UPLOADS = 8;
 export const RETRY_BACKOFF_MS = [250, 1_000, 4_000] as const;
 // Backend caps each /skill-resolve call at 100 fileIds.
 export const RESOLVE_BATCH_MAX = 100;
+// Backend caps Idempotency-Key at 128 chars.
+export const IDEMPOTENCY_KEY_MAX = 128;
 export const LOG_PREFIX = "[nabu-files]";
 export const PLUGIN_ID = "nabu-files";

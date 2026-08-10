@@ -4,6 +4,8 @@
 export const TRANSCRIPT_ONLY_OPENCLAW_ASSISTANT_MODELS = new Set<string>([
   "delivery-mirror",
   "gateway-injected",
+  // Media-generation completion cards (display-visible, model-invisible).
+  "media-completion",
 ]);
 
 export function isTranscriptOnlyOpenClawAssistantModel(provider: unknown, model: unknown): boolean {

@@ -33,7 +33,11 @@ export type { PairingChannel } from "./pairing-store.types.js";
 const PAIRING_CODE_LENGTH = 8;
 const PAIRING_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const PAIRING_CODE_MAX_ATTEMPTS = 500;
-const PAIRING_PENDING_TTL_MS = 60 * 60 * 1000;
+/**
+ * Exported: gateway dm.pair.* handlers derive the wire-visible expiresAt from
+ * this TTL; expiry is never stored, only derived (entries are pruned on read).
+ */
+export const PAIRING_PENDING_TTL_MS = 60 * 60 * 1000;
 const PAIRING_PENDING_MAX = 3;
 const PAIRING_STORE_LOCK_OPTIONS = {
   retries: {
@@ -763,6 +767,59 @@ export async function approveChannelPairingCode(params: {
         env,
         pairingAdapter: params.pairingAdapter,
       });
+      return { id: entry.id, entry };
+    },
+  );
+}
+
+/**
+ * Discards a pending request WITHOUT touching allowFrom — the deliberate
+ * difference from approve. Same locked remove so a concurrent approve of the
+ * same code cannot double-fire against a half-removed entry.
+ */
+export async function rejectChannelPairingCode(params: {
+  channel: PairingChannel;
+  code: string;
+  accountId?: string;
+  env?: NodeJS.ProcessEnv;
+}): Promise<{ id: string; entry?: PairingRequest } | null> {
+  const env = params.env ?? process.env;
+  const code = (normalizeNullableString(params.code) ?? "").toUpperCase();
+  if (!code) {
+    return null;
+  }
+
+  const filePath = resolvePairingPath(params.channel, env);
+  return await withFileLock(
+    filePath,
+    { version: 1, requests: [] } satisfies PairingStore,
+    async () => {
+      const { requests: pruned, removed } = await readPrunedPairingRequests(filePath);
+      const normalizedAccountId = normalizePairingAccountId(params.accountId);
+      const idx = pruned.findIndex((r) => {
+        if (r.code.toUpperCase() !== code) {
+          return false;
+        }
+        return requestMatchesAccountId(r, normalizedAccountId);
+      });
+      if (idx < 0) {
+        if (removed) {
+          await writeJsonFile(filePath, {
+            version: 1,
+            requests: pruned,
+          } satisfies PairingStore);
+        }
+        return null;
+      }
+      const entry = pruned[idx];
+      if (!entry) {
+        return null;
+      }
+      pruned.splice(idx, 1);
+      await writeJsonFile(filePath, {
+        version: 1,
+        requests: pruned,
+      } satisfies PairingStore);
       return { id: entry.id, entry };
     },
   );

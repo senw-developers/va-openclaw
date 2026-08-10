@@ -1,16 +1,22 @@
 {
   "id": "nabu-google-workspace",
+  "activation": {
+    "onStartup": true
+  },
   "name": "@va-team/nabu-google-workspace",
   "description": "Per-tenant Google Drive + Calendar access. Vends short-lived OAuth access tokens fetched from the Nabu backend and exposes a single passthrough tool the agent uses against Google REST APIs.",
   "skills": ["./skills"],
+  "contracts": {
+    "tools": ["nabu_google"]
+  },
   "enabledByDefault": false,
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
     "properties": {
       "apiToken": {
-        "type": "string",
-        "description": "Per-organization skill bearer issued by the GoogleWorkspace module on Nabu backend"
+        "type": ["string", "object"],
+        "description": "Per-organization skill bearer issued by the GoogleWorkspace module on Nabu backend. Accepts either a literal string or a SecretRef object {source, provider, id} resolved from env."
       },
       "apiBaseUrl": {
         "type": "string",

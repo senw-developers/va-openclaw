@@ -42,10 +42,12 @@ import {
 } from "./agent-prompt.js";
 import type { AuthRateLimiter } from "./auth-rate-limit.js";
 import type { ResolvedGatewayAuth } from "./auth.js";
+import { resolveOpenAiCompatibleHttpSenderIsOwner } from "./http-auth-utils.js";
 import { sendJson, setSseHeaders, watchClientDisconnect, writeDone } from "./http-common.js";
 import { handleGatewayPostJsonEndpoint } from "./http-endpoint-helpers.js";
 import {
   resolveGatewayRequestContext,
+  resolveIngressSenderId,
   resolveOpenAiCompatModelOverride,
   resolveOpenAiCompatibleHttpOperatorScopes,
 } from "./http-utils.js";
@@ -157,6 +159,7 @@ function buildAgentCommandInput(params: {
    * plugins can resolve the right credentials.
    */
   senderId?: string;
+  senderIsOwner: boolean;
   abortSignal?: AbortSignal;
   streamParams?: AgentStreamParams;
 }) {
@@ -171,6 +174,7 @@ function buildAgentCommandInput(params: {
     deliver: false as const,
     messageChannel: params.messageChannel,
     senderId: params.senderId,
+    senderIsOwner: params.senderIsOwner,
     bestEffortDeliver: false as const,
     allowModelOverride: true as const,
     abortSignal: params.abortSignal,
@@ -898,6 +902,9 @@ export async function handleOpenAiHttpRequest(
   const streamIncludeUsage = stream && resolveIncludeUsageForStreaming(payload);
   const model = typeof payload.model === "string" ? payload.model : "openclaw";
   const user = typeof payload.user === "string" ? payload.user : undefined;
+  // On the compat surface, shared-secret bearer auth is also treated as an
+  // owner sender so owner-only tool policy matches the documented contract.
+  const senderIsOwner = resolveOpenAiCompatibleHttpSenderIsOwner(req, handled.requestAuth);
   const maxTokens =
     typeof payload.max_completion_tokens === "number"
       ? payload.max_completion_tokens
@@ -1053,7 +1060,8 @@ export async function handleOpenAiHttpRequest(
     runId,
     messageChannel,
     abortSignal: abortController.signal,
-    senderId: user?.trim() || undefined,
+    senderId: resolveIngressSenderId(user),
+    senderIsOwner,
     streamParams,
   });
 

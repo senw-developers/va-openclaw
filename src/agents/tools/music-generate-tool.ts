@@ -577,6 +577,7 @@ export function createMusicGenerateTool(options?: {
   authProfileStore?: AuthProfileStore;
   agentSessionKey?: string;
   requesterOrigin?: DeliveryContext;
+  requesterUserId?: string;
   workspaceDir?: string;
   sandbox?: MusicGenerateSandboxConfig;
   fsPolicy?: ToolFsPolicy;
@@ -727,6 +728,7 @@ export function createMusicGenerateTool(options?: {
       const taskHandle = createMusicGenerationTaskRun({
         sessionKey: options?.agentSessionKey,
         requesterOrigin: options?.requesterOrigin,
+        requesterUserId: options?.requesterUserId,
         prompt,
         providerId: selectedProvider?.id ?? selectedModelRef?.provider,
       });

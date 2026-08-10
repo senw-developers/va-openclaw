@@ -186,3 +186,13 @@ export function resolveGatewayRequestContext(params: {
 
   return { agentId, sessionKey, messageChannel };
 }
+
+/**
+ * Trusted end-user identity from the OpenAI-standard `user` body field — the
+ * single ingress derivation feeding OpenClawPluginToolContext.requesterSenderId.
+ * One helper on purpose: a dropped per-endpoint copy silently severs per-user
+ * identity (Google/1Password token vending) instead of failing to compile.
+ */
+export function resolveIngressSenderId(user: string | undefined): string | undefined {
+  return user?.trim() || undefined;
+}

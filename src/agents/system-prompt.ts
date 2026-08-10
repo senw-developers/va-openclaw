@@ -1017,6 +1017,9 @@ export function buildAgentSystemPrompt(params: {
     memoryCitationsMode: params.memoryCitationsMode,
     memorySection,
     acpEnabled,
+    // Deliver guidance renders inside the stable prefix; its only dynamic
+    // input beyond promptMode is whether the deliver tool is present.
+    deliverToolAvailable: availableTools.has("deliver"),
     stableContextFiles: contextFiles.stable,
   });
   const stablePrefix = cacheStablePromptPrefix(stablePrefixCacheKey, () => {
@@ -1249,6 +1252,11 @@ export function buildAgentSystemPrompt(params: {
       );
     }
 
+    // Deliver guidance stays in the prompt-cache-stable prefix on purpose:
+    // both of its inputs are hashed (promptMode, deliverToolAvailable), and
+    // below the boundary it would re-send as uncached suffix every turn.
+    lines.push(...buildDeliverSection({ isMinimal, availableTools }));
+
     lines.push(SYSTEM_PROMPT_CACHE_BOUNDARY);
     return lines.filter(Boolean).join("\n");
   });
@@ -1281,7 +1289,6 @@ export function buildAgentSystemPrompt(params: {
       sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
       silentReplyPromptMode,
     }),
-    ...buildDeliverSection({ isMinimal, availableTools }),
     ...buildVoiceSection({ isMinimal, ttsHint: params.ttsHint }),
   );
 

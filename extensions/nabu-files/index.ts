@@ -57,6 +57,7 @@ export default definePluginEntry({
         return await resolveFiles(api, [...input.fileIds], {
           ...(input.expirySeconds !== undefined ? { expirySeconds: input.expirySeconds } : {}),
           ...(input.requestId ? { requestId: input.requestId } : {}),
+          ...(input.userId ? { userId: input.userId } : {}),
         });
       };
       unregisterResolver = registerMediaResolver(resolver);

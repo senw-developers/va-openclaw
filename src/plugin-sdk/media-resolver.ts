@@ -5,6 +5,7 @@ export type MediaResolverInput = {
   readonly fileIds: ReadonlyArray<number>;
   readonly expirySeconds?: number;
   readonly requestId?: string;
+  readonly userId?: string;
 };
 
 export type FileRef =

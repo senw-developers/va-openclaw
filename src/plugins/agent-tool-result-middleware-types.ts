@@ -28,6 +28,8 @@ export type AgentToolResultMiddlewareContext = {
   sessionId?: string;
   sessionKey?: string;
   runId?: string;
+  /** Owning numeric userId for files-api authorization, resolved by core. */
+  userId?: string;
 };
 
 export type AgentToolResultMiddlewareResult = {

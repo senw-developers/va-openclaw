@@ -57,7 +57,7 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 export function createMediaUploadAgentToolResultMiddleware(): AgentToolResultMiddleware {
-  return async (event) => {
+  return async (event, ctx) => {
     const uploader = getMediaUploader();
     if (!uploader) return;
 
@@ -82,6 +82,7 @@ export function createMediaUploadAgentToolResultMiddleware(): AgentToolResultMid
               toolCallId: event.toolCallId,
               mediaIndex: c.index,
               source: `tool_result:${event.toolName}`,
+              ...(ctx?.userId ? { userId: ctx.userId } : {}),
               ...(mimeHint ? { mimeHint } : {}),
             }),
             UPLOAD_TIMEOUT_MS,

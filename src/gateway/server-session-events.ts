@@ -5,6 +5,7 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import { resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { getRuntimeConfig } from "../config/io.js";
 import { normalizeAgentId } from "../routing/session-key.js";
+import { parseSessionOwner } from "../sessions/session-key-utils.js";
 import type { SessionLifecycleEvent } from "../sessions/session-lifecycle-events.js";
 import type { SessionTranscriptUpdate } from "../sessions/transcript-events.js";
 import { projectChatDisplayMessage } from "./chat-display-projection.js";
@@ -189,34 +190,28 @@ async function handleTranscriptUpdateBroadcast(
     ...(typeof update.messageId === "string" ? { id: update.messageId } : {}),
     ...(messageSeq !== undefined ? { seq: messageSeq } : {}),
   });
-  const message = projectChatDisplayMessage(rawMessage);
+  // Bind Files-API fileRefs[] live before projection strips details.nabuFileIds
+  // (projection preserves the top-level fileRefs key).
+  const owner = parseSessionOwner(sessionKey);
+  const enrichedMessage = await enrichMessageWithFileRefs(rawMessage, {
+    requestId: `session.message:${sessionKey}`,
+    ...(owner ? { userId: owner.userId } : {}),
+  });
+  const message = projectChatDisplayMessage(enrichedMessage);
   if (message) {
-    // Nabu Files-API: projectChatDisplayMessage deletes details (incl.
-    // details.nabuFileIds), so compute fileRefs from the RAW message and attach
-    // them to the projected display message. Async so a slow media resolver does
-    // not block other subscribers.
-    void (async () => {
-      const enrichedRaw = (await enrichMessageWithFileRefs(rawMessage, {
-        requestId: `session.message:${sessionKey}`,
-      })) as { fileRefs?: unknown };
-      const outMessage =
-        enrichedRaw && Array.isArray(enrichedRaw.fileRefs)
-          ? { ...(message as Record<string, unknown>), fileRefs: enrichedRaw.fileRefs }
-          : message;
-      params.broadcastToConnIds(
-        "session.message",
-        {
-          sessionKey,
-          ...(visibleAgentId ? { agentId: visibleAgentId } : {}),
-          message: outMessage,
-          ...(typeof update.messageId === "string" ? { messageId: update.messageId } : {}),
-          ...(messageSeq !== undefined ? { messageSeq } : {}),
-          ...sessionSnapshot,
-        },
-        connIds,
-        { dropIfSlow: true },
-      );
-    })();
+    params.broadcastToConnIds(
+      "session.message",
+      {
+        sessionKey,
+        ...(visibleAgentId ? { agentId: visibleAgentId } : {}),
+        message,
+        ...(typeof update.messageId === "string" ? { messageId: update.messageId } : {}),
+        ...(messageSeq !== undefined ? { messageSeq } : {}),
+        ...sessionSnapshot,
+      },
+      connIds,
+      { dropIfSlow: true },
+    );
     return;
   }
 

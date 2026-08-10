@@ -1,26 +1,42 @@
+import { coerceSecretRef } from "openclaw/plugin-sdk/secret-ref-runtime";
 import type { OpenClawPluginApi } from "../api.js";
-import { DEFAULT_API_BASE_URL, DEFAULT_REFRESH_MS } from "./nabu-1password.constants.js";
-import type { NabuOnePasswordConfig } from "./nabu-1password.interface.js";
+import { DEFAULT_API_BASE_URL, PLUGIN_ID } from "./nabu-1password.constants.js";
+import type { Nabu1PasswordConfig } from "./nabu-1password.interface.js";
+
+interface OpenClawConfigShape {
+  plugins?: { entries?: Record<string, { config?: { apiToken?: unknown; apiBaseUrl?: string } }> };
+}
 
 /**
- * Read plugin config from the live config file on every call.
- *
- * `api.pluginConfig` is a startup snapshot and will NOT reflect changes
- * made via `config.patch` after startup. `api.runtime.config.loadConfig()`
- * re-reads the file from disk so rotations pushed by NestJS take effect
- * without a gateway restart.
+ * Read this plugin's config from the active runtime snapshot via
+ * `api.runtime.config.current()` — the approved accessor; the deprecated
+ * loader seam is blocked by the config-boundary architecture guard.
  */
-export function getLivePluginConfig(api: OpenClawPluginApi): NabuOnePasswordConfig {
-  const cfg = api.runtime.config.loadConfig();
-  const entry = (cfg as any)?.plugins?.entries?.["nabu-1password"]?.config;
+export function getLivePluginConfig(api: OpenClawPluginApi): Nabu1PasswordConfig {
+  const cfg = api.runtime.config.current() as unknown as OpenClawConfigShape;
+  const entry = cfg.plugins?.entries?.[PLUGIN_ID]?.config;
   return {
-    apiToken: entry?.apiToken ?? "",
+    apiToken: resolveApiTokenInput(entry?.apiToken),
     apiBaseUrl: entry?.apiBaseUrl ?? DEFAULT_API_BASE_URL,
-    refreshIntervalMs: entry?.refreshIntervalMs ?? DEFAULT_REFRESH_MS,
   };
 }
 
 /** Returns true when the plugin has a bearer token configured to call NestJS. */
-export function hasApiToken(config: NabuOnePasswordConfig): boolean {
+export function hasApiToken(config: Nabu1PasswordConfig): boolean {
   return typeof config.apiToken === "string" && config.apiToken.length > 0;
+}
+
+/** Accept a literal token or an env SecretRef {source, provider, id} (nabu-files pattern). */
+function resolveApiTokenInput(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  const ref = coerceSecretRef(value);
+  if (!ref) {
+    return "";
+  }
+  if (ref.source === "env") {
+    return process.env[ref.id]?.trim() ?? "";
+  }
+  return "";
 }

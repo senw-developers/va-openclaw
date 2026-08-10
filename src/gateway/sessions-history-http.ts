@@ -2,18 +2,23 @@
 // Serves JSON and SSE history snapshots backed by transcript files.
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
-import { resolveSessionFilePath } from "../config/sessions/paths.js";
 import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
 import { getRuntimeConfig } from "../config/io.js";
 import { loadSessionStore } from "../config/sessions.js";
+import { resolveSessionFilePath } from "../config/sessions/paths.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { parseSessionOwner } from "../sessions/session-key-utils.js";
 import { onSessionTranscriptUpdate } from "../sessions/transcript-events.js";
 import type { AuthRateLimiter } from "./auth-rate-limit.js";
 import type { ResolvedGatewayAuth } from "./auth.js";
 import { DEFAULT_CHAT_HISTORY_TEXT_MAX_CHARS } from "./chat-display-projection.js";
+import {
+  enrichMessagesWithFileRefs,
+  readUserAttachmentFileIdsByMessage,
+} from "./chat-file-refs.js";
 import {
   sendInvalidRequest,
   sendJson,
@@ -26,10 +31,6 @@ import {
   getHeader,
   resolveSharedSecretHttpOperatorScopes,
 } from "./http-utils.js";
-import {
-  enrichMessagesWithFileRefs,
-  readUserAttachmentFileIdsByMessage,
-} from "./chat-file-refs.js";
 import { authorizeOperatorScopesForMethod } from "./method-scopes.js";
 import {
   buildSessionHistorySnapshot,
@@ -177,9 +178,11 @@ export async function handleSessionHistoryHttpRequest(
         ),
       )
     : undefined;
+  const owner = parseSessionOwner(target.canonicalKey);
   const enrichedSnapshot = await enrichMessagesWithFileRefs(rawSnapshot, {
     requestId: `sessions-history-http:${target.canonicalKey}`,
     ...(userAttachments ? { userAttachments } : {}),
+    ...(owner ? { userId: owner.userId } : {}),
   });
   const historySnapshot = buildSessionHistorySnapshot({
     rawMessages: enrichedSnapshot,
@@ -219,7 +222,10 @@ export async function handleSessionHistoryHttpRequest(
       storePath: target.storePath,
       sessionFile: entry.sessionFile,
     },
-    rawMessages: rawSnapshot,
+    // Enriched on purpose (fork #30): SSE initial history must carry the same
+    // fileRefs as the JSON path; refreshAsync re-reads are un-enriched — see
+    // nabu-integration/tech-debt.md.
+    rawMessages: enrichedSnapshot,
     rawTranscriptSeq: boundedSnapshot?.totalMessages,
     totalRawMessages: boundedSnapshot?.totalMessages,
     maxChars: effectiveMaxChars,

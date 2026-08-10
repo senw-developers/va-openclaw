@@ -1,7 +1,6 @@
 import { Buffer } from "node:buffer";
 import * as http from "node:http";
 import * as https from "node:https";
-
 import type { OpenClawPluginApi } from "../api.js";
 import { getLivePluginConfig, hasApiToken } from "./config.js";
 import {
@@ -10,14 +9,29 @@ import {
   RESOLVE_BATCH_MAX,
   SKILL_RESOLVE_PATH,
 } from "./nabu-files.constants.js";
-import type { NabuFilesConfig, ResolveResponse, ResolvedFile } from "./nabu-files.interface.js";
+import type {
+  FilesApiErrorEnvelope,
+  NabuFilesConfig,
+  ResolveResponse,
+  ResolvedFile,
+} from "./nabu-files.interface.js";
 import { isRetryableHttpError, withBackoff } from "./retry.js";
+
+class ResolveHttpError extends Error {
+  readonly statusCode: number;
+  readonly body: unknown;
+  constructor(statusCode: number, body: unknown, message: string) {
+    super(message);
+    this.statusCode = statusCode;
+    this.body = body;
+  }
+}
 
 // Chunks at RESOLVE_BATCH_MAX (100); backend rejects larger batches.
 export async function resolveFiles(
   api: OpenClawPluginApi,
   fileIds: number[],
-  opts?: { expirySeconds?: number; requestId?: string },
+  opts?: { expirySeconds?: number; requestId?: string; userId?: string },
 ): Promise<ResolvedFile[]> {
   if (fileIds.length === 0) return [];
 
@@ -25,6 +39,13 @@ export async function resolveFiles(
   if (!hasApiToken(cfg)) {
     throw new Error(`${LOG_PREFIX} apiToken not configured`);
   }
+  // Per-user isolation: resolve must be authorized as an owner.
+  const userId = opts?.userId;
+  if (!userId) {
+    throw new Error(`${LOG_PREFIX} no userId on resolve; refusing (per-user isolation)`);
+  }
+  // Composed tenancy (G1): org rides beside userId — one gateway stack per
+  // org, id from env. Fail-closed so resolves never run unscoped.
   const organizationId = process.env.OPENCLAW_ORGANIZATION_ID;
   if (!organizationId) {
     throw new Error(`${LOG_PREFIX} OPENCLAW_ORGANIZATION_ID not set`);
@@ -41,6 +62,7 @@ export async function resolveFiles(
       run: () =>
         postSkillResolve({
           cfg,
+          userId,
           organizationId,
           requestId: opts?.requestId,
           fileIds: ids,
@@ -63,6 +85,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
 
 async function postSkillResolve(input: {
   cfg: NabuFilesConfig;
+  userId: string;
   organizationId: string;
   requestId: string | undefined;
   fileIds: number[];
@@ -80,6 +103,7 @@ async function postSkillResolve(input: {
     "Content-Length": String(body.length),
     "x-skill-token": input.cfg.apiToken,
     "x-organization-id": input.organizationId,
+    "x-user-id": input.userId,
   };
   if (input.requestId) headers["X-Request-Id"] = input.requestId;
 
@@ -110,13 +134,27 @@ async function postSkillResolve(input: {
             }
             return;
           }
-          const httpErr = new Error(`${LOG_PREFIX} skill-resolve returned ${status}: ${text}`);
-          (httpErr as Error & { statusCode?: number }).statusCode = status;
-          reject(httpErr);
+          let body: FilesApiErrorEnvelope | string = text;
+          try {
+            body = JSON.parse(text) as FilesApiErrorEnvelope;
+          } catch {
+            /* keep raw text */
+          }
+          reject(
+            new ResolveHttpError(
+              status,
+              body,
+              // Body in the message on purpose: the backend's error envelope
+              // (code/message/data) is the only diagnostic for a failed batch.
+              `${LOG_PREFIX} skill-resolve returned ${status}: ${JSON.stringify(body).slice(0, 300)}`,
+            ),
+          );
         });
       },
     );
-    req.on("error", (err) => reject(new Error(`${LOG_PREFIX} skill-resolve network error: ${err.message}`)));
+    req.on("error", (err) =>
+      reject(new Error(`${LOG_PREFIX} skill-resolve network error: ${err.message}`)),
+    );
     req.on("timeout", () => {
       req.destroy(new Error(`${LOG_PREFIX} skill-resolve timeout after ${timeoutMs}ms`));
     });

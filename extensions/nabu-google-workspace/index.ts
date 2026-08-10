@@ -1,18 +1,15 @@
 import { definePluginEntry, type OpenClawPluginApi } from "./api.js";
 import { getLivePluginConfig } from "./src/config.js";
-import {
-  DEFAULT_REFRESH_MS,
-  REFRESH_RPC_METHOD,
-} from "./src/nabu-google-workspace.constants.js";
+import { DEFAULT_REFRESH_MS, REFRESH_RPC_METHOD } from "./src/nabu-google-workspace.constants.js";
 import { clearTokenCache, logBackendStatus } from "./src/token.js";
 import { createNabuGoogleTool } from "./src/tools/nabu-google.tool.js";
 
 /**
  * Plugin entry — nabu-google-workspace
  *
- * Per-user Google Drive + Calendar access. Mirrors the nabu-1password
- * shape: NestJS owns the long-lived OAuth refresh tokens, this plugin
- * holds only short-lived access tokens in process memory and exposes
+ * Per-user Google Drive + Calendar access. NestJS owns the long-lived
+ * OAuth refresh tokens, this plugin holds only short-lived access tokens
+ * in process memory and exposes
  * a single passthrough tool (`nabu_google`) the agent uses against
  * Google's REST APIs.
  *

@@ -1,18 +1,22 @@
 import { Buffer } from "node:buffer";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import * as http from "node:http";
 import * as https from "node:https";
 import { basename } from "node:path";
-
 import type { OpenClawPluginApi } from "../api.js";
 import { getLivePluginConfig, hasApiToken } from "./config.js";
 import {
   DEFAULT_REQUEST_TIMEOUT_MS,
+  IDEMPOTENCY_KEY_MAX,
   LOG_PREFIX,
   SKILL_UPLOAD_PATH,
 } from "./nabu-files.constants.js";
-import type { FileResource, FilesApiErrorEnvelope, NabuFilesConfig } from "./nabu-files.interface.js";
+import type {
+  FileResource,
+  FilesApiErrorEnvelope,
+  NabuFilesConfig,
+} from "./nabu-files.interface.js";
 import { isRetryableHttpError, withBackoff } from "./retry.js";
 
 // Keyed by Idempotency-Key so the upstream uploader and the tool_result_persist
@@ -44,6 +48,7 @@ export type UploadCallOptions = {
   mediaIndex?: number;
   toolCallId?: string;
   source?: string;
+  userId?: string;
 };
 
 export async function uploadFile(
@@ -54,6 +59,13 @@ export async function uploadFile(
   if (!hasApiToken(cfg)) {
     throw new Error(`${LOG_PREFIX} apiToken not configured`);
   }
+  // senw-core requires numeric x-user-id; refuse channel-native senderIds.
+  const userId = input.userId;
+  if (typeof userId !== "string" || !/^\d+$/.test(userId)) {
+    throw new Error(`${LOG_PREFIX} non-numeric userId on upload; refusing`);
+  }
+  // Composed tenancy (G1): org rides beside userId — one gateway stack per
+  // org, id from env. Fail-closed so uploads never land unscoped.
   const organizationId = process.env.OPENCLAW_ORGANIZATION_ID;
   if (!organizationId) {
     throw new Error(`${LOG_PREFIX} OPENCLAW_ORGANIZATION_ID not set`);
@@ -68,8 +80,7 @@ export async function uploadFile(
     return cached;
   }
 
-  const bytes =
-    input.bytes ?? (input.filePath ? await readFile(input.filePath) : Buffer.alloc(0));
+  const bytes = input.bytes ?? (input.filePath ? await readFile(input.filePath) : Buffer.alloc(0));
   if (bytes.length === 0) {
     throw new Error(`${LOG_PREFIX} no bytes to upload (filePath=${input.filePath})`);
   }
@@ -85,6 +96,7 @@ export async function uploadFile(
       run: () =>
         postSkillUpload({
           cfg,
+          userId,
           organizationId,
           idempotencyKey: key,
           requestId: input.responseId,
@@ -118,18 +130,34 @@ export function __resetUploadCachesForTests(): void {
 
 // ---------------------------------------------------------------------------
 
+const IDEMPOTENCY_HASH_RESERVE = 9; // ":" + 8 hex chars
+const USER_PREFIX_MAX = IDEMPOTENCY_KEY_MAX - IDEMPOTENCY_HASH_RESERVE - 1;
+
 function buildIdempotencyKey(input: UploadCallOptions): string {
+  const u = input.userId ?? "anon";
+  let candidate: string;
   if (input.responseId && input.mediaIndex !== undefined) {
-    return `${input.responseId}:${input.mediaIndex}`;
+    candidate = `u:${u}:${input.responseId}:${input.mediaIndex}`;
+  } else if (input.responseId && input.toolCallId) {
+    candidate = `u:${u}:${input.responseId}:${input.toolCallId}`;
+  } else if (input.toolCallId) {
+    candidate = `u:${u}:toolcall:${input.toolCallId}`;
+  } else {
+    return `u:${u}:nf:${randomBytes(8).toString("hex")}`;
   }
-  if (input.responseId && input.toolCallId) {
-    return `${input.responseId}:${input.toolCallId}`;
+  if (candidate.length <= IDEMPOTENCY_KEY_MAX) {
+    return candidate;
   }
-  if (input.toolCallId) {
-    return `toolcall:${input.toolCallId}`;
-  }
-  // Fallback - random key so we still upload but don't share idempotency.
-  return `nf:${randomBytes(8).toString("hex")}`;
+  // hash-cap long suffix; preserve `u:<id>:` prefix verbatim for cross-user isolation.
+  const rawUserPrefix = `u:${u}:`;
+  const cappedUserPrefix =
+    rawUserPrefix.length > USER_PREFIX_MAX
+      ? `u:${createHash("sha1").update(u).digest("hex").slice(0, 12)}:`
+      : rawUserPrefix;
+  const tail = candidate.slice(rawUserPrefix.length);
+  const tailHash = createHash("sha1").update(tail).digest("hex").slice(0, 8);
+  const tailMax = IDEMPOTENCY_KEY_MAX - cappedUserPrefix.length - IDEMPOTENCY_HASH_RESERVE;
+  return `${cappedUserPrefix}${tail.slice(0, Math.max(0, tailMax))}:${tailHash}`;
 }
 
 function indexByToolCall(toolCallId: string | undefined, fileId: number): void {
@@ -148,6 +176,7 @@ function indexByToolCall(toolCallId: string | undefined, fileId: number): void {
 
 type PostInput = {
   cfg: NabuFilesConfig;
+  userId: string;
   organizationId: string;
   idempotencyKey: string;
   requestId: string | undefined;
@@ -166,6 +195,7 @@ async function postSkillUpload(input: PostInput): Promise<FileResource> {
     "Content-Length": String(body.length),
     "x-skill-token": input.cfg.apiToken,
     "x-organization-id": input.organizationId,
+    "x-user-id": input.userId,
     "Idempotency-Key": input.idempotencyKey,
   };
   if (input.requestId) headers["X-Request-Id"] = input.requestId;
@@ -193,7 +223,11 @@ async function postSkillUpload(input: PostInput): Promise<FileResource> {
             try {
               resolve(JSON.parse(text) as FileResource);
             } catch (err) {
-              reject(new Error(`${LOG_PREFIX} skill-upload: bad JSON response: ${(err as Error).message}`));
+              reject(
+                new Error(
+                  `${LOG_PREFIX} skill-upload: bad JSON response: ${(err as Error).message}`,
+                ),
+              );
             }
             return;
           }
@@ -203,7 +237,9 @@ async function postSkillUpload(input: PostInput): Promise<FileResource> {
           } catch {
             /* keep raw text */
           }
-          reject(new UploadHttpError(status, body, `${LOG_PREFIX} skill-upload returned ${status}`));
+          reject(
+            new UploadHttpError(status, body, `${LOG_PREFIX} skill-upload returned ${status}`),
+          );
         });
       },
     );

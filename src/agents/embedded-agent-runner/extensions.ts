@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.types.js";
+import { parseSessionOwner } from "../../sessions/session-key-utils.js";
 import { setCompactionSafeguardRuntime } from "../agent-hooks/compaction-safeguard-runtime.js";
 import compactionSafeguardExtension from "../agent-hooks/compaction-safeguard.js";
 import contextPruningExtension from "../agent-hooks/context-pruning.js";
@@ -50,8 +51,11 @@ function hasErrorToolResultStatus(result: AgentToolResult<unknown>): boolean {
   return status === "error" || status === "timeout";
 }
 
-function buildAgentToolResultMiddlewareFactory(): ExtensionFactory {
-  const runner = createAgentToolResultMiddlewareRunner({ runtime: "openclaw" });
+function buildAgentToolResultMiddlewareFactory(opts: { userId?: string } = {}): ExtensionFactory {
+  const runner = createAgentToolResultMiddlewareRunner({
+    runtime: "openclaw",
+    ...(opts.userId ? { userId: opts.userId } : {}),
+  });
   return (agent) => {
     agent.on("tool_result", async (rawEvent: unknown, ctx: { cwd?: string }) => {
       const event = recordFromUnknown(rawEvent) as AgentToolResultEvent;
@@ -144,6 +148,26 @@ function buildContextPruningFactory(params: {
   return contextPruningExtension;
 }
 
+/**
+ * Resolve the owning numeric userId for files-api media uploads, mirroring how
+ * image_generate uses requesterSenderId: prefer the session owner, fall back to
+ * a numeric senderId. Returns undefined when neither is a numeric user id.
+ */
+function resolveMediaOwnerUserId(params: {
+  sessionKey?: string;
+  senderId?: string | null;
+}): string | undefined {
+  const owner = parseSessionOwner(params.sessionKey)?.userId;
+  if (owner && /^\d+$/.test(owner)) {
+    return owner;
+  }
+  const senderId = params.senderId?.trim();
+  if (senderId && /^\d+$/.test(senderId)) {
+    return senderId;
+  }
+  return undefined;
+}
+
 export function buildEmbeddedExtensionFactories(params: {
   cfg: OpenClawConfig | undefined;
   sessionManager: SessionManager;
@@ -151,6 +175,8 @@ export function buildEmbeddedExtensionFactories(params: {
   provider: string;
   modelId: string;
   model: ProviderRuntimeModel | undefined;
+  sessionKey?: string;
+  senderId?: string | null;
 }): ExtensionFactory[] {
   const factories: ExtensionFactory[] = [];
   if (resolveEffectiveCompactionMode(params.cfg) === "safeguard") {
@@ -184,7 +210,14 @@ export function buildEmbeddedExtensionFactories(params: {
   if (pruningFactory) {
     factories.push(pruningFactory);
   }
-  factories.push(buildAgentToolResultMiddlewareFactory());
+  factories.push(
+    buildAgentToolResultMiddlewareFactory({
+      userId: resolveMediaOwnerUserId({
+        sessionKey: params.sessionKey,
+        senderId: params.senderId,
+      }),
+    }),
+  );
   return factories;
 }
 
