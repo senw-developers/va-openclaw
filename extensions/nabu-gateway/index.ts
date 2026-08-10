@@ -24,19 +24,18 @@ interface LlmOutputEvent {
   model?: string;
   assistantTexts?: string[];
   lastAssistant?: unknown;
+  /**
+   * Mirrors core NormalizedUsage (`src/agents/usage.ts`) exactly — token counts
+   * only, no cost. Forwarded verbatim, so a wrong key here would silently ship
+   * `undefined` to the backend's metering.
+   */
   usage?: {
     input?: number;
     output?: number;
     cacheRead?: number;
     cacheWrite?: number;
-    totalTokens?: number;
-    cost?: {
-      input?: number;
-      output?: number;
-      cacheRead?: number;
-      cacheWrite?: number;
-      total?: number;
-    };
+    reasoningTokens?: number;
+    total?: number;
   };
 }
 
