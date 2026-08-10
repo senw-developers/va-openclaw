@@ -67,12 +67,12 @@ placeholder never reaches an outbound header.
 
 ## S8 follow-ups (2026-08-07)
 
-### F-1 — GitHub labels for the new labeler entries
+### F-1 — GitHub labels for the labeler entries (CANCELLED 2026-08-10)
 
-`.github/labeler.yml` gained `extensions: nabu-*` ×7 + `nabu-integration`;
-the matching GH labels do not exist yet (labeler no-ops until created).
-Create after landing — repo-metadata write, held with the rest of the
-push/post batch.
+Operator decision: no nabu labels on this fork. The 8 labeler.yml entries
+were reverted (labels were never created on GitHub). If labels are ever
+wanted, restore the entries from commit `85c3c9d2a6` and create the labels
+together.
 
 ### F-2 — seed compose lags root compose surfaces (CLOSED 2026-08-10)
 
