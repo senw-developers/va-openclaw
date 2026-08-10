@@ -8,6 +8,11 @@ services:
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
       OPENCLAW_ORGANIZATION_ID: ${OPENCLAW_ORGANIZATION_ID:-}
       OPENCLAW_ALLOW_INSECURE_PRIVATE_WS: ${OPENCLAW_ALLOW_INSECURE_PRIVATE_WS:-}
+      OPENCLAW_DISABLE_BONJOUR: ${OPENCLAW_DISABLE_BONJOUR:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-}
+      OPENCLAW_OTEL_PRELOADED: ${OPENCLAW_OTEL_PRELOADED:-}
       CLOUDFLARE_AI_GATEWAY_API_KEY: ${CLOUDFLARE_AI_GATEWAY_API_KEY:-}
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
       NABU_FILES_SKILL_TOKEN: ${NABU_FILES_SKILL_TOKEN:-}
@@ -33,6 +38,13 @@ services:
       # - /var/run/docker.sock:/var/run/docker.sock
     # group_add:
     #   - "${DOCKER_GID:-999}"
+    # Same hardening as the root compose gateway service (seam D11) — the
+    # gateway must not run with more capabilities than the CLI sidecar.
+    cap_drop:
+      - NET_RAW
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
     ports:
       - '${OPENCLAW_GATEWAY_PORT:-18789}:18789'
       - '${OPENCLAW_BRIDGE_PORT:-18790}:18790'

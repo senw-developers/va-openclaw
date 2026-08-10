@@ -74,14 +74,13 @@ the matching GH labels do not exist yet (labeler no-ops until created).
 Create after landing — repo-metadata write, held with the rest of the
 push/post batch.
 
-### F-2 — seed compose lags root compose surfaces
+### F-2 — seed compose lags root compose surfaces (CLOSED 2026-08-10)
 
-`nabu-integration/spawn-seed/docker-compose.yml` does not forward
-`OPENCLAW_DISABLE_BONJOUR` / `OTEL_*` and still applies
-`cap_drop`/`no-new-privileges` to the CLI service only (seam D11 — root
-compose hardens both services). The resynced docker-setup.sh guards the
-missing pieces; close by resyncing the seed compose from root
-`docker-compose.yml` the same way #14 resynced the setup script.
+Gateway service now carries the root-compose hardening (`cap_drop`
+NET*RAW/NET_ADMIN + `no-new-privileges` — seam D11 retired) and the
+`OPENCLAW_DISABLE_BONJOUR`/core `OTEL*\*` passthroughs. Remaining root-only
+surfaces (per-signal OTLP endpoint overrides, host-gateway extra_hosts) are
+deliberate omissions until a tenant needs them.
 
 ### F-4 — skill-token resolver duplicated ×4; platform seam exists
 
@@ -93,15 +92,16 @@ centrally (`src/secrets/runtime-config-collectors-plugins.ts`) with
 config.patch refresh — the local copies then delete. Migrate all four in one
 change with its own gates; do not patch copies individually.
 
-### F-5 — seed lacks explicit `plugins.bundledDiscovery`
+### F-5 — seed lacks explicit `plugins.bundledDiscovery` (RESOLVED: won't add)
 
-Core's invalid-config hint calls bare `plugins.allow` a legacy key and
-suggests `plugins.bundledDiscovery`. Seed validates clean and all plugins
-load, but tenants see the hint whenever any config error surfaces. Pin the
-intended mode (likely `"allowlist"`) after verifying the enum semantics
-against `src/plugins/config-activation-shared.ts`. Related: nabu-model-router
-deliberately has no package.json (T10/#34), so the plugin-inventory generator
-skips it — intentional exclusion, do not "fix" by adding one.
+Verified 2026-08-10: `bundledDiscovery` is a **deprecated shipped-upgrade
+marker** (`src/config/types.plugins.ts:71` — "accepted for old restrictive
+allowlist configs"), not a recommended surface. Seeding a deprecated key
+violates the canonical-config rule; the doctor hint only appears on
+already-invalid configs and the seed validates clean. No change. Related:
+nabu-model-router deliberately has no package.json (T10/#34), so the
+plugin-inventory generator skips it — intentional exclusion, do not "fix"
+by adding one.
 
 ### F-3 — G6 validator dormant
 
