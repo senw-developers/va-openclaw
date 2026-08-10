@@ -290,10 +290,12 @@ async function finalizeCliContextEngineTurn(params: {
 
 /** Prepares and runs one CLI-backed agent turn. */
 export async function runCliAgent(params: RunCliAgentParams): Promise<EmbeddedAgentRunResult> {
-  // Cron gate must fire before prepareCliRunContext — that call allocates
+  // Admission gate must fire before prepareCliRunContext — that call allocates
   // backend resources released only by runPreparedCliAgent's try…finally.
+  // Runs for every trigger: the auto-reply path already fires this hook on user
+  // turns, so gating it here left gateway ingress (HTTP/WS/node) unclaimable.
   params.onExecutionStarted?.();
-  if (params.trigger === "cron") {
+  {
     const startedAt = Date.now();
     const hookRunner = getGlobalHookRunner();
     if (hookRunner?.hasHooks("before_agent_reply")) {

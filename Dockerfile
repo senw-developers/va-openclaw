@@ -124,8 +124,11 @@ RUN pnpm_config_verify_deps_before_run=false pnpm canvas:a2ui:bundle || \
 # Commit provenance: `git archive | docker build -` ships no .git, so the SHA
 # must arrive as a build arg. write-build-info.ts reads GIT_COMMIT and stamps
 # dist/build-info.json — `openclaw --version` then shows the commit suffix.
+# Kept as ENV rather than inline on the RUN so the upstream build command
+# string stays byte-identical (test/scripts/test-install-sh-docker asserts it).
 ARG GIT_COMMIT=""
-RUN NODE_OPTIONS=--max-old-space-size=8192 pnpm_config_verify_deps_before_run=false GIT_COMMIT="$GIT_COMMIT" pnpm build:docker
+ENV GIT_COMMIT=${GIT_COMMIT}
+RUN NODE_OPTIONS=--max-old-space-size=8192 pnpm_config_verify_deps_before_run=false pnpm build:docker
 # Force pnpm for UI build (Bun may fail on ARM/Synology architectures)
 ENV OPENCLAW_PREFER_PNPM=1
 RUN pnpm_config_verify_deps_before_run=false pnpm ui:build

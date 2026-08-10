@@ -662,7 +662,10 @@ export async function runEmbeddedAgent(
         trigger: params.trigger,
         ...buildAgentHookContextChannelFields(params),
       };
-      if (params.trigger === "cron" && hookRunner?.hasHooks("before_agent_reply")) {
+      // Every trigger, not just cron: the auto-reply path already fires this
+      // hook on user turns, so gating it here left gateway ingress
+      // (HTTP /v1/responses, WS chat.send, node events) unclaimable.
+      if (hookRunner?.hasHooks("before_agent_reply")) {
         notifyExecutionPhase("before_agent_reply", { provider, model: modelId });
         const hookResult = await hookRunner.runBeforeAgentReply(
           { cleanedBody: params.prompt },
