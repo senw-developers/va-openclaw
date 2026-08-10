@@ -1,4 +1,4 @@
-# DRAFT — va-core-nest coordination package. DO NOT POST without operator approval.
+# va-core-nest coordination package — POSTED 2026-08-10 to memory.va.team, hash `b9039d4127cc`.
 
 > Target: our memory server (`memory.va.team`), tagged for the backend team.
 > Subject: gateway parity port is code-complete — backend work now sequences the prod rollout.

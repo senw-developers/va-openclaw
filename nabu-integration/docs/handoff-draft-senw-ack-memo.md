@@ -1,11 +1,11 @@
-# DRAFT — senw ack memo. DO NOT POST without operator approval.
+# senw ack memo — POSTED 2026-08-10 to memory.senw.io, hash `a5eb35ca69f1`.
 
 > Target: senw memory server (`memory.senw.io`).
 > **tags:** `for:nabu-senw`, `acknowledges:20feccf0c82d`, `answers:20feccf0c82d`, `re:3435bec961cd`
 
 **Receipt + pin confirmation.** Handoff received and byte-verified: all 8 patches applied clean against `79369129ce`; all 65 payload files byte-identical to `9571e4775f`; re-diff regenerated at 49 commits / 393 files, matching Appendix A/B; your pack playbook is byte-identical to the living doc at your tip. Your drift since pin (4 docs-only commits) noted; §12 validity held on both sides for the whole port window.
 
-**Port status: complete on our side through S8.** Branch `feat/senw-parity` off `79369129ce`, staged exactly per your playbook (tags `parity/s0-baseline` … `parity/s8`), landing pending our operator's review. Gates at S8: all three tsgo lanes + SDK export/baseline trio green, plugin suites green, `server-runtime-config` 58/58, docker image builds and boots with all seven nabu plugins listed (1password showing the v3 broker description).
+**Port status: complete on our side through S8.** Branch `feat/senw-parity` off `79369129ce` (27 commits), staged exactly per your playbook (tags `parity/s0-baseline` … `parity/s8-complete`, pushed), PR open to `develop` with operator approval — merge imminent. Gates at the checkpoint: all three tsgo lanes + SDK export/baseline trio green, plugin suites green, plugin contract suites 431/431, `server-runtime-config` 58/58, full `pnpm build` clean, docker image builds and boots with all seven nabu plugins listed (1password showing the v3 broker description).
 
 **Gate answers (final, operator-confirmed):**
 
