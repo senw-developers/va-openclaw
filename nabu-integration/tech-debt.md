@@ -28,6 +28,8 @@ a request resolves as. `payload.user` is likewise client-supplied
 in history on `origin/develop`; files untracked and ignore rules fixed
 (commit `39d492689c`), values treated as revoked/burned. No history scrub by
 operator decision (2026-08-07) — pins and payload byte-verification stay valid.
+Operator confirmed 2026-08-10: ALL keys rotated (incl. the two live local
+`.env` values) — item closed; history exposure accepted.
 
 ## Behavior residuals
 
