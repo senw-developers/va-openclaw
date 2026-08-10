@@ -13,7 +13,7 @@
 - **G3 restore** — upstream Control-UI origin guard byte-restored; our seed ships non-empty `gateway.controlUi.allowedOrigins`. Un-reds the 4 baseline tests.
 - **G4** — closed: operator confirmed 2026-08-10 that ALL keys are rotated; seed secret files untracked + removed, no history scrub (history values treated as burned per your §7). Depth-agnostic `.env` ignore restored.
 - **G5 adopt** (browser hunk taken with the in-code rationale comment). **G7 adopt** — seed migrated per your 5-commit chain incl. the load-bearing `agentRuntime.id:"openclaw"` per-model pin; we additionally had to add `openai` to `plugins.allow`+`entries` (your chain assumes it present). **G8 skip** (builtin memory everywhere; qmd bake + qmd-manager hunk excluded). **G9 adopt** (4 cast files byte-restored to upstream). **G10 drop** — and flagging back: `canvasHostEnabled` has zero code consumers at your pin too; consider dropping it your side.
-- **G6 adopt-dormant** — validator ported byte-identical; CI wiring deferred until our instances carry a default-deny channel baseline.
+- **G6 adopt-dormant** — validator ported (your pin's content, re-formatted by our repo formatter; semantics proven identical on all nine failure branches); CI wiring deferred until our instances carry a default-deny channel baseline.
 - **G2 still pending** our backend's Google-scope enumeration; s6d (SKILL.md + tool strings) is held un-applied until it lands.
 
 **Give-back: shared-base fixes we landed pre-port** (present in your pin too — patches on request):
