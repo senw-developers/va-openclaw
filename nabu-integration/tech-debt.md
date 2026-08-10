@@ -45,8 +45,15 @@ Close by threading an enrichment callback through `SessionHistorySseState`.
 
 - `canvasHostEnabled` re-graft (s5) dropped: zero code consumers in either
   tree (G10). Flagged back to senw.
-- s6d Drive dual-scope SKILL + tool-string held pending G2 (backend scope
-  enumeration); `drive.file`-only backend would make the SKILL mislead agents.
+- s6d Drive dual-scope SKILL + tool-string: **DROPPED PERMANENTLY (G2 = SKIP,
+  2026-08-10)**. Verified in va-core-nest: the authorize URL requests exactly
+  six scopes (`openid, email, profile, drive.file, calendar.events,
+calendar.freebusy` — `google-workspace.constants.ts:18-26`, single call site,
+  no override). `drive.readonly` is an explicitly deferred Phase-2 scope behind
+  a paid CASA Tier 2 assessment. Our shipped `drive.file`-only SKILL wording is
+  correct; the senw hunk would have made agents attempt read-all Drive calls
+  that 403. Re-open only if the backend adds the scope AND every user
+  re-consents (Google never widens an issued refresh token).
 
 ### R-4 — upload timeout asymmetry (accepted, Q16 reclassified)
 
@@ -64,6 +71,49 @@ when unset (`src/config/io.ts` onMissing); plugin readers are being unified
 fail-closed at S6, but the config-interpolation path (cf-aig-metadata header)
 still fails open. Close with a doctor/startup check that the literal
 placeholder never reaches an outbound header.
+
+## Backend-gated contract gaps (verified in va-core-nest 2026-08-10)
+
+Findings from a read-only sweep of the sibling backend at `../va-core-nest`
+(branch develop). These are THEIR builds, but each one decides whether one of
+our ported surfaces can be enabled — and three of them break on image rebuild.
+
+### C-1 — SMTP rejects `agentId`: nabu-email breaks on rebuild (BLOCKER)
+
+`nabu_email_send` / `nabu_email_fetch` spread `agentId` into the request body;
+the backend's send/fetch DTOs have no such field and its global ValidationPipe
+runs `forbidNonWhitelisted: true`. Every email tool call returns 400 the moment
+a tenant runs the ported image, and nabu-email ships `enabled: true` in the
+seed. Their fix is two lines (accept-and-ignore); it is a Phase-0 rebuild gate.
+Their mailbox is also structurally one-per-org (UNIQUE on `organization_id`),
+so per-agent routing does not exist — our tool descriptions were corrected to
+stop promising it.
+
+### C-2 — usage-ingest: the lockstep risk is INVERTED (we are ahead)
+
+The route is still `@Public()` with org read from the request body, but our
+nabu-gateway plugin already sends `x-skill-token` — resolving to `""`, because
+the seed entry has no `apiToken` and no backend push path mints one. Two
+consequences: the plugin's manifest text (corrected) must not claim a guard
+exists, and the backend must run dual-accept (log-only) before fail-closing, or
+metering 401s silently — which is fail-OPEN billing, worse than today.
+
+### C-3 — files-api has no user dimension at all
+
+Repo-wide, the backend reads no `x-user-id`; skill uploads persist
+`created_by = 0` and the resolve query carries no ownership predicate. Our
+per-user header is a silent no-op server-side today, and cross-user file
+isolation is currently held only by our client-side idempotency-key convention.
+Ownership must be recorded on write and enforced on resolve before S6a is
+enabled in prod.
+
+### C-4 — 1Password: route missing and no per-user model
+
+The backend serves `POST /api/v1/onepassword/token` (no body, org-scoped, one
+shared `ops_` token per org); our v3 plugin calls
+`/api/v1/onepassword/access-token` with `{userId, channel}` and expects 404/412
+semantics. The gap is a whole per-user model, not a route rename. Seed keeps
+`enabled: false` — verify no live tenant has flipped it before rebuild.
 
 ## S8 follow-ups (2026-08-07)
 

@@ -59,7 +59,8 @@ export async function uploadFile(
   if (!hasApiToken(cfg)) {
     throw new Error(`${LOG_PREFIX} apiToken not configured`);
   }
-  // senw-core requires numeric x-user-id; refuse channel-native senderIds.
+  // Backend keys ownership on the numeric app user id; refuse channel-native
+  // senderIds (phone numbers, chat handles) rather than mis-attributing them.
   const userId = input.userId;
   if (typeof userId !== "string" || !/^\d+$/.test(userId)) {
     throw new Error(`${LOG_PREFIX} non-numeric userId on upload; refusing`);

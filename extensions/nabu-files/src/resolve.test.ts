@@ -106,7 +106,15 @@ describe("resolveFiles — userId-primary", () => {
 
   it("refuses when userId is absent", async () => {
     const api = stubApi();
-    await expect(resolveFiles(api, [1, 2, 3])).rejects.toThrow(/no userId on resolve; refusing/);
+    await expect(resolveFiles(api, [1, 2, 3])).rejects.toThrow(/non-numeric userId on resolve/);
+  });
+
+  it("refuses a channel-native senderId (backend keys ownership numerically)", async () => {
+    const api = stubApi();
+    await expect(resolveFiles(api, [1], { userId: "+15551234567" })).rejects.toThrow(
+      /non-numeric userId on resolve/,
+    );
+    expect(vi.mocked(http.request)).not.toHaveBeenCalled();
   });
 
   it("emits x-user-id and OMITS x-channel", async () => {

@@ -4,7 +4,7 @@
     "onStartup": true
   },
   "name": "@va-team/nabu-gateway",
-  "description": "VA.Team gateway bridge — LLM usage tracking via Cloudflare AI Gateway and credit-based gating",
+  "description": "VA.Team gateway bridge \u2014 LLM usage tracking via Cloudflare AI Gateway and credit-based gating",
   "enabledByDefault": true,
   "configSchema": {
     "type": "object",
@@ -12,17 +12,17 @@
     "properties": {
       "enabled": {
         "type": "boolean",
-        "description": "Whether LLM calls are allowed — toggled by NestJS when credits are exhausted/replenished",
+        "description": "Whether LLM calls are allowed \u2014 toggled by NestJS when credits are exhausted/replenished",
         "default": true
       },
       "apiBaseUrl": {
         "type": "string",
-        "description": "NestJS backend base URL — Docker-internal",
+        "description": "NestJS backend base URL \u2014 Docker-internal",
         "default": "http://app:6001"
       },
       "apiToken": {
         "type": "string",
-        "description": "Platform skill token issued by senw-core; sent as x-skill-token on usage/ingest (channel auth). Same token as nabu-email. See SPEC.md D16."
+        "description": "Skill token sent as x-skill-token on usage/ingest. The backend route is unauthenticated today (@Public, org read from the body) \u2014 this token is sent ahead of a backend guard so the guard can ship without a lockstep release."
       }
     }
   },

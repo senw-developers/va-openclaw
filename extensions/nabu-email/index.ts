@@ -118,7 +118,7 @@ export default definePluginEntry({
         name: "nabu_email_send",
         label: "Send Email",
         description:
-          "Send email from this agent's user mailbox. Server resolves sender from agentId — do NOT pass any sender/from/user/identity fields.",
+          "Send email from the organization's configured mailbox. Do NOT pass any sender/from/user/identity fields — the server resolves the mailbox itself.",
         parameters: Type.Object({
           to: Type.Union([
             Type.String({ description: "Single recipient address" }),
@@ -151,7 +151,7 @@ export default definePluginEntry({
         name: "nabu_email_fetch",
         label: "Fetch Emails",
         description:
-          "Fetch email from this agent's user mailbox (IMAP). Server resolves mailbox owner from agentId — do NOT pass any user/identity fields.",
+          "Fetch email from the organization's configured mailbox (IMAP). Do NOT pass any user/identity fields — the server resolves the mailbox itself.",
         parameters: Type.Object({
           mailbox: Type.Optional(Type.String({ default: "INBOX" })),
           limit: Type.Optional(Type.Number({ minimum: 1, maximum: 50, default: 10 })),
@@ -182,11 +182,9 @@ export default definePluginEntry({
     );
 
     // -----------------------------------------------------------------------
-    // Gateway RPC — NestJS calls this after config.patch to confirm receipt.
-    // The actual token is read live from disk via getLivePluginConfig(),
-    // so no restart is needed after a token update.
-    //
-    // NestJS call: connection.rpc("nabu.email.configure", {})
+    // Gateway RPC — optional receipt probe for a token push. No backend caller
+    // exists today; the token is read live per call from the runtime config
+    // snapshot, so config.patch alone is sufficient and needs no restart.
     // -----------------------------------------------------------------------
     api.registerGatewayMethod("nabu.email.configure", ({ respond }) => {
       respond(true, { ok: true, plugin: api.id });

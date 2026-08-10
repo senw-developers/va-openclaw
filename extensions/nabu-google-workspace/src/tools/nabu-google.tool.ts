@@ -1,6 +1,6 @@
-import { Type } from "typebox";
 import { jsonResult, stringEnum } from "openclaw/plugin-sdk/channel-actions";
 import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
+import { Type } from "typebox";
 import type { AnyAgentTool, OpenClawPluginApi, OpenClawPluginToolContext } from "../../api.js";
 import {
   ALLOWED_METHODS,
@@ -68,7 +68,9 @@ const GOOGLE_API_HOST = new URL(GOOGLE_API_BASE).host;
  */
 function buildAndValidateGoogleUrl(rawPath: string, query?: Record<string, unknown>): URL {
   if (typeof rawPath !== "string" || !rawPath.startsWith("/")) {
-    throw new Error(`Path must be an absolute path starting with /; got: ${String(rawPath).slice(0, 120)}`);
+    throw new Error(
+      `Path must be an absolute path starting with /; got: ${String(rawPath).slice(0, 120)}`,
+    );
   }
   const url = new URL(rawPath, GOOGLE_API_BASE);
   if (url.host !== GOOGLE_API_HOST) {
@@ -135,11 +137,14 @@ export function createNabuGoogleTool(
               "OPENCLAW_ORGANIZATION_ID is not set on the gateway; tenant identity unresolvable.",
           });
         }
+        // Backend connections are keyed on the numeric app user id, so a
+        // channel-native senderId (phone number, chat handle) would 404 against
+        // a dashboard-created grant. Refuse rather than mis-attribute.
         const userId = context.requesterSenderId;
-        if (!userId) {
+        if (typeof userId !== "string" || !/^\d+$/.test(userId)) {
           return jsonResult({
             error:
-              "No requester identity in tool context — Google calls require a per-user OAuth grant.",
+              "No numeric requester identity in tool context — Google calls require a per-user OAuth grant made from the dashboard.",
           });
         }
         const channel = context.messageChannel ?? "unknown";
@@ -290,7 +295,11 @@ function extractErrorReason(response: unknown): string | null {
       const errors = (error as { errors?: unknown }).errors;
       if (Array.isArray(errors) && errors.length > 0) {
         const first = errors[0];
-        if (first && typeof first === "object" && typeof (first as { reason?: unknown }).reason === "string") {
+        if (
+          first &&
+          typeof first === "object" &&
+          typeof (first as { reason?: unknown }).reason === "string"
+        ) {
           return (first as { reason: string }).reason;
         }
       }

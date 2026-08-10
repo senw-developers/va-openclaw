@@ -39,10 +39,12 @@ export async function resolveFiles(
   if (!hasApiToken(cfg)) {
     throw new Error(`${LOG_PREFIX} apiToken not configured`);
   }
-  // Per-user isolation: resolve must be authorized as an owner.
+  // Per-user isolation: resolve must be authorized as an owner. Numeric check
+  // mirrors upload — the backend keys ownership on the numeric app user id, so
+  // a channel-native senderId would resolve against the wrong (or no) owner.
   const userId = opts?.userId;
-  if (!userId) {
-    throw new Error(`${LOG_PREFIX} no userId on resolve; refusing (per-user isolation)`);
+  if (typeof userId !== "string" || !/^\d+$/.test(userId)) {
+    throw new Error(`${LOG_PREFIX} non-numeric userId on resolve; refusing (per-user isolation)`);
   }
   // Composed tenancy (G1): org rides beside userId — one gateway stack per
   // org, id from env. Fail-closed so resolves never run unscoped.
