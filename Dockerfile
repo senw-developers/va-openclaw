@@ -121,7 +121,11 @@ RUN pnpm_config_verify_deps_before_run=false pnpm canvas:a2ui:bundle || \
      echo "/* A2UI bundle unavailable in this build */" > extensions/canvas/src/host/a2ui/a2ui.bundle.js && \
      echo "stub" > extensions/canvas/src/host/a2ui/.bundle.hash && \
      rm -rf vendor/a2ui apps/shared/OpenClawKit/Tools/CanvasA2UI)
-RUN NODE_OPTIONS=--max-old-space-size=8192 pnpm_config_verify_deps_before_run=false pnpm build:docker
+# Commit provenance: `git archive | docker build -` ships no .git, so the SHA
+# must arrive as a build arg. write-build-info.ts reads GIT_COMMIT and stamps
+# dist/build-info.json — `openclaw --version` then shows the commit suffix.
+ARG GIT_COMMIT=""
+RUN NODE_OPTIONS=--max-old-space-size=8192 pnpm_config_verify_deps_before_run=false GIT_COMMIT="$GIT_COMMIT" pnpm build:docker
 # Force pnpm for UI build (Bun may fail on ARM/Synology architectures)
 ENV OPENCLAW_PREFER_PNPM=1
 RUN pnpm_config_verify_deps_before_run=false pnpm ui:build
@@ -180,12 +184,16 @@ ARG OPENCLAW_BUNDLED_PLUGIN_DIR
 # If you change these annotations, also update:
 # - docs/install/docker.md ("Base image metadata" section)
 # - https://docs.openclaw.ai/install/docker
+# revision is empty unless the builder passes --build-arg GIT_COMMIT=<sha>
+# (CI injects it via build-push labels; local/prod tarball builds pass it).
+ARG GIT_COMMIT=""
 LABEL org.opencontainers.image.source="https://github.com/openclaw/openclaw" \
   org.opencontainers.image.url="https://openclaw.ai" \
   org.opencontainers.image.documentation="https://docs.openclaw.ai/install/docker" \
   org.opencontainers.image.licenses="MIT" \
   org.opencontainers.image.title="OpenClaw" \
-  org.opencontainers.image.description="OpenClaw gateway and CLI runtime container image"
+  org.opencontainers.image.description="OpenClaw gateway and CLI runtime container image" \
+  org.opencontainers.image.revision="${GIT_COMMIT}"
 
 WORKDIR /app
 
