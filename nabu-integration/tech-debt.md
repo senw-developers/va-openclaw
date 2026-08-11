@@ -23,10 +23,22 @@ a request resolves as. `payload.user` is likewise client-supplied
   holder can select any user by crafting that header. Live impact is still nil
   — the backend drops `x-user-id` (C-3) — but the two land together: **their
   ownership column must not ship before this header is bound or refused.**
-- Fix (needs a backend contract decision, tracked with B6-1 scheduling):
-  operator-JWT with allowed-userIds issued by va-core-nest + HMAC-bind over
-  `(organizationId, userId, sessionKey)`, or refuse the header on
-  bearer-scoped calls.
+- **Operator decision 2026-08-11: ACCEPTED AS-IS FOR NOW.** Ship the
+  functionality; harden later. This is defensible only because of the trust
+  model above — the sole bearer holder is va-core-nest — and because senw's
+  audit confirms **channel end-users cannot exploit it** (their session key is
+  gateway-built from an authenticated sender, not from a header). Exposure is
+  confined to operator/bearer scope.
+- ⚠ The deferral does NOT relax the ordering constraint: if the backend ships
+  files-api ownership enforcement (C-3) while the header is unbound, any bearer
+  holder can act as any user. Either both land, or neither does.
+- Agreed design when we do harden (adopted from senw, who documented but never
+  implemented it — their ledger marks it "joint senw + nabu work, ticket when
+  staffing security"): layered **operator-issued JWT carrying an allowed-userIds
+  claim**, with the gateway deriving userId from the JWT and ignoring the header
+  for files-api scoping, **plus an HMAC bind over
+  `(organizationId, userId, sessionKey)`**. Sent to the backend as D6 in memo
+  `6a4f1260846e`.
 
 ### D-SEC-2 — burned credentials in git history (G4, accepted)
 
@@ -77,6 +89,14 @@ when unset (`src/config/io.ts` onMissing); plugin readers are being unified
 fail-closed at S6, but the config-interpolation path (cf-aig-metadata header)
 still fails open. Close with a doctor/startup check that the literal
 placeholder never reaches an outbound header.
+
+Verified 2026-08-11 by running `openclaw doctor --deep` and `--lint --json`:
+22 checks run, 0 skipped, 50 findings — and **zero** of them mention
+organization id, placeholder or interpolation. No such check exists today, so
+this entry is "write the check", not "run the tool". The same run confirmed the
+degraded-token behavior we want elsewhere: a missing skill token surfaces as
+`nabu_email is allowed but unavailable: config: …apiToken` and nothing else
+breaks (see F-4).
 
 ### D-SEC-3 — credit latch did not gate gateway ingress (OUR SIDE FIXED 2026-08-11)
 
