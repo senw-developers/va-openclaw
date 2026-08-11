@@ -161,6 +161,20 @@ enabled in prod.
 
 ### C-4 — 1Password: route missing and no per-user model
 
+**RESOLVED 2026-08-11 (operator): 1Password stays ORGANIZATION-SCOPED.** No
+per-user vaults, no per-user `ops_` tokens, no new backend model. Our plugin is
+the side that must move: `ACCESS_TOKEN_PATH` is
+`/api/v1/onepassword/access-token`
+(`extensions/nabu-1password/src/nabu-1password.constants.ts:5`) but the backend
+only exposes org-scoped `POST /api/v1/onepassword/token` with no body — so
+today every call 404s at the router. Change the constant, drop or demote the
+`{userId, channel}` body to audit-only, and reword both error branches
+org-centric. This also unblocks B3/B4/B5, which all sat behind the route
+question. Related decisions: we keep our own status codes rather than pushing
+`PreconditionFailed` onto the backend (they adapt), we keep a 403 for
+"org configured, caller not granted", and the error parser targets the real
+backend envelope `{error, reason?, detail?}` — **not** `{code, message}`.
+
 The backend serves `POST /api/v1/onepassword/token` (no body, org-scoped, one
 shared `ops_` token per org); our v3 plugin calls
 `/api/v1/onepassword/access-token` with `{userId, channel}` and expects 404/412
