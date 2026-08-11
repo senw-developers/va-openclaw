@@ -6,8 +6,10 @@ export interface NabuFilesConfig {
   maxConcurrentUploads?: number;
 }
 
-// Backend uses `fileId` (aligned with `/skill-resolve`); `id` is tolerated
-// for transitional safety against older backend deploys.
+/**
+ * Backend uses `fileId` (aligned with `/skill-resolve`); `id` is tolerated for
+ * transitional safety against older backend deploys.
+ */
 export interface FileResource {
   fileId?: number;
   id?: number;

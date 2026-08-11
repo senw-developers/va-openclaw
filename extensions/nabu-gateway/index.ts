@@ -2,22 +2,17 @@ import * as http from "node:http";
 import * as https from "node:https";
 import { definePluginEntry, type OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
 
-// ---------------------------------------------------------------------------
-// Plugin config — mirrors plugins.entries.nabu-gateway.config
-// ---------------------------------------------------------------------------
+/**
+ * Mirrors plugins.entries.nabu-gateway.config.
+ */
 interface NabuGatewayConfig {
   apiBaseUrl: string;
   apiToken: string;
 }
 
-// ---------------------------------------------------------------------------
-// Event / context shapes based on OpenClaw src/plugins/types.ts
-//
-// llm_output event:  called from attempt.ts → hookRunner.runLlmOutput()
-// Context:           PluginHookAgentContext
-// ---------------------------------------------------------------------------
-
-/** Fields passed as the first arg to the llm_output hook handler. */
+/**
+ * First arg to the llm_output hook handler, mirroring core's event shape.
+ */
 interface LlmOutputEvent {
   runId?: string;
   sessionId?: string;
@@ -40,7 +35,9 @@ interface LlmOutputEvent {
   };
 }
 
-/** PluginHookAgentContext — second arg to agent lifecycle hooks. */
+/**
+ * PluginHookAgentContext — second arg to agent lifecycle hooks.
+ */
 interface AgentHookContext {
   agentId?: string;
   sessionKey?: string;
@@ -75,17 +72,11 @@ function isNabuEnabled(api: OpenClawPluginApi): boolean {
   return pluginEntry?.enabled !== false;
 }
 
-// ---------------------------------------------------------------------------
-// Fire-and-forget POST to the backend.
-//
-// Node http/https rather than fetch: OpenClaw installs a global undici proxy
-// dispatcher that breaks plugin outbound TLS. Response is drained but not
-// awaited so the hook never blocks the agent loop.
-//
-// ⚠ Contract obligation, not an implementation detail: this lane must NEVER
-// retry. The backend keys nothing on runId and its accumulators are
-// unconditional, so a retry double-bills the tenant.
-// ---------------------------------------------------------------------------
+/**
+ * Fire-and-forget usage POST. ⚠ Must NEVER retry: the backend keys nothing on
+ * runId and its accumulators are unconditional, so a retry double-bills.
+ * node:http/https, not fetch — the global undici dispatcher breaks plugin TLS.
+ */
 function postUsageEvent(cfg: NabuGatewayConfig, body: Record<string, unknown>): void {
   const url = new URL("/api/v1/nabu/usage/ingest", cfg.apiBaseUrl);
   const payload = JSON.stringify(body);
@@ -127,10 +118,9 @@ function postUsageEvent(cfg: NabuGatewayConfig, body: Record<string, unknown>): 
   req.end();
 }
 
-// ---------------------------------------------------------------------------
-// Plugin entry
-// Docs: https://docs.openclaw.ai/plugins/building-plugins
-// ---------------------------------------------------------------------------
+/**
+ * Plugin entry. Docs: https://docs.openclaw.ai/plugins/building-plugins
+ */
 export default definePluginEntry({
   id: "nabu-gateway",
   name: "@va-team/nabu-gateway",
@@ -147,7 +137,6 @@ export default definePluginEntry({
       );
     }
 
-    // -----------------------------------------------------------------
     // Hook: before_agent_reply
     //
     // Fires before the LLM call. If nabuEnabled is false in
@@ -156,7 +145,6 @@ export default definePluginEntry({
     //
     // NestJS toggles this via config.patch when credits are
     // exhausted or replenished.
-    // -----------------------------------------------------------------
     api.on("before_agent_reply", (_event: unknown, _ctx: AgentHookContext) => {
       if (!isNabuEnabled(api)) {
         return {
@@ -169,7 +157,6 @@ export default definePluginEntry({
       return undefined;
     });
 
-    // -----------------------------------------------------------------
     // Hook: llm_output
     //
     // Fires after every LLM call regardless of trigger source
@@ -177,7 +164,6 @@ export default definePluginEntry({
     //
     // See: src/agents/pi-embedded-runner/run/attempt.ts
     //      → hookRunner.runLlmOutput(event, ctx)
-    // -----------------------------------------------------------------
     api.on("llm_output", (event: LlmOutputEvent, ctx: AgentHookContext) => {
       if (!event.runId) return;
 

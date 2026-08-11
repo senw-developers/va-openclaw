@@ -13,12 +13,16 @@ import {
 } from "./nabu-1password.constants.js";
 import type { OpTokenRequest } from "./nabu-1password.interface.js";
 
-/** First 12 hex of sha256 — safe to log. Never log the raw token. */
+/**
+ * First 12 hex of sha256 — safe to log. Never log the raw token.
+ */
 export function fingerprint(token: string): string {
   return createHash("sha256").update(token).digest("hex").slice(0, 12);
 }
 
-/** Redact the skill-token value if it ever echoes back in an error body. */
+/**
+ * Redact the skill-token value if it ever echoes back in an error body.
+ */
 export function redactSkillToken(text: string, apiToken: string): string {
   if (!apiToken) {
     return text;
@@ -71,7 +75,9 @@ function describeBackendError(body: string): string | null {
   return parts.length > 0 ? [...new Set(parts)].join(": ") : null;
 }
 
-/** Assert the broker returned a 1Password service-account token. */
+/**
+ * Assert the broker returned a 1Password service-account token.
+ */
 export function assertOpsToken(token: unknown): asserts token is string {
   if (typeof token !== "string" || !token.startsWith(OPS_TOKEN_PREFIX)) {
     throw new Error("1Password broker returned a non-ops_ token");
@@ -154,7 +160,9 @@ export async function fetchUserOpToken(
   return token;
 }
 
-/** Startup readiness log — confirms config is present. Logs only; never throws. */
+/**
+ * Startup readiness log — confirms config is present. Logs only; never throws.
+ */
 export function logBackendStatus(api: OpenClawPluginApi): void {
   const cfg = getLivePluginConfig(api);
   if (!hasApiToken(cfg)) {

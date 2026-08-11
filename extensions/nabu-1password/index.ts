@@ -3,19 +3,9 @@ import { logBackendStatus } from "./src/token.js";
 import { createNabu1PasswordTool } from "./src/tools/nabu-1password.tool.js";
 
 /**
- * Plugin entry — nabu-1password
- *
- * Per-user 1Password read access. The Nabu backend stores each user's encrypted
- * 1Password service-account token and brokers it per call; this plugin holds no
- * token state. A single read-only passthrough tool (`nabu_1password`) resolves
- * op:// references and lists items/vaults, running the native `op` CLI in a
- * child process whose env carries the token only.
- *
- * Lifecycle:
- *  - gateway_start → log config readiness. Tokens are per-user and pulled per
- *    call, so nothing is pre-warmed and there is no cache to invalidate.
- *
- * Docs: https://docs.openclaw.ai/plugins/building-plugins
+ * Read-only 1Password access. The backend brokers the service-account token
+ * per call, so the plugin holds no token state and needs no cache; `op` runs
+ * in a child process whose env carries the token alone.
  */
 export default definePluginEntry({
   id: "nabu-1password",

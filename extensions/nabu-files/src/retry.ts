@@ -25,7 +25,9 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// 5xx, 429, and network errors retry; other 4xx are terminal.
+/**
+ * 5xx, 429 and network errors retry; other 4xx are terminal.
+ */
 export function isRetryableHttpError(err: unknown): boolean {
   const status = (err as { statusCode?: number } | null)?.statusCode;
   if (status === undefined) return true;

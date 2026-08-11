@@ -2,14 +2,18 @@ import type { OpenClawConfig } from "../api.js";
 import { DEFAULT_ROUTER_CONFIG } from "./nabu-model-router.constants.js";
 import type { ModelRef, RouterConfig, RouterTransport } from "./nabu-model-router.interface.js";
 
-// Parses "provider/model" into { provider, model }. Returns null if malformed.
+/**
+ * Parse "provider/model" into { provider, model }; null when malformed.
+ */
 export function parseModelRef(ref: string): ModelRef | null {
   const idx = ref.indexOf("/");
   if (idx <= 0 || idx === ref.length - 1) return null;
   return { provider: ref.slice(0, idx), model: ref.slice(idx + 1) };
 }
 
-// Returns the set of providers managed by this router's tier config.
+/**
+ * The set of providers managed by this router's tier config.
+ */
 export function getManagedProviders(cfg: RouterConfig): Set<string> {
   const providers = new Set<string>();
   for (const ref of Object.values(cfg.tiers)) {
@@ -19,11 +23,11 @@ export function getManagedProviders(cfg: RouterConfig): Set<string> {
   return providers;
 }
 
-// The manifest's JSON Schema defaults only populate top-level keys that exist
-// in the user's config; ajv `applyDefaults` does not synthesize missing nested
-// objects. So if an instance's openclaw.json has no `config` block (or an
-// empty one), `classifier` and `tiers` are undefined at runtime. This resolver
-// fills in every field so the plugin is safe to load against any config shape.
+/**
+ * Schema defaults only populate top-level keys that already exist — ajv does
+ * not synthesize missing nested objects — so `classifier` and `tiers` are
+ * undefined when a config block is absent. Fill every field here.
+ */
 export function resolveRouterConfig(raw: unknown): RouterConfig {
   const r = (raw ?? {}) as Partial<RouterConfig>;
   const d = DEFAULT_ROUTER_CONFIG;

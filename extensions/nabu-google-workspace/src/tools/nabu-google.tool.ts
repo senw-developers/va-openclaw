@@ -12,9 +12,7 @@ import {
 } from "../nabu-google-workspace.constants.js";
 import { getAccessTokenForUser, invalidateCachedToken } from "../token.js";
 
-// ---------------------------------------------------------------------------
 // Schema — flat object, no Type.Union (project guideline)
-// ---------------------------------------------------------------------------
 
 const NabuGoogleToolSchema = Type.Object(
   {
@@ -53,18 +51,14 @@ type NabuGoogleToolParams = {
   body?: unknown;
 };
 
-// ---------------------------------------------------------------------------
 // Path / method gating — defense in depth alongside Google's own ACLs
-// ---------------------------------------------------------------------------
 
 const GOOGLE_API_HOST = new URL(GOOGLE_API_BASE).host;
 
 /**
- * Validate the resolved URL — NOT the raw input — against the host and
- * path-prefix allowlists. Rejects path traversal (`/drive/v3/../gmail`),
- * encoded traversal, protocol-relative escapes (`//evil.com`), and any
- * absolute URL embedded in `path`. The post-resolution check is the
- * load-bearing security boundary; the raw `startsWith` check is not.
+ * Validate the RESOLVED url — not the raw input — against the host and
+ * path-prefix allowlists, so traversal, encoded traversal, protocol-relative
+ * escapes and embedded absolute urls all fail. This is the security boundary.
  */
 function buildAndValidateGoogleUrl(rawPath: string, query?: Record<string, unknown>): URL {
   if (typeof rawPath !== "string" || !rawPath.startsWith("/")) {
@@ -100,20 +94,16 @@ function stringifyQueryValue(value: unknown): string | null {
 }
 
 /**
- * Hard-delete on `/drive/v3/files/<id>` is a destructive irreversible op
- * the agent should NEVER perform on user data — soft-trash via
- * `PATCH … {trashed:true}` is reversible and equally useful. Block at
- * the plugin layer so prompt injection cannot coerce the agent into
- * permanent loss.
+ * Hard-delete of a Drive file is irreversible and soft-trash is equally
+ * useful, so block it at the plugin layer — prompt injection must not be able
+ * to coerce permanent data loss.
  */
 function isBlockedDestructiveOp(method: string, pathname: string): boolean {
   if (method !== "DELETE") return false;
   return /^\/drive\/v3\/files\/[^/]+\/?$/.test(pathname);
 }
 
-// ---------------------------------------------------------------------------
 // Tool registration
-// ---------------------------------------------------------------------------
 
 export function createNabuGoogleTool(
   api: OpenClawPluginApi,
@@ -185,9 +175,7 @@ export function createNabuGoogleTool(
   } satisfies AnyAgentTool;
 }
 
-// ---------------------------------------------------------------------------
 // Single Google call — handles content-type + error envelope
-// ---------------------------------------------------------------------------
 
 interface GoogleCallResult {
   status: number;
@@ -195,9 +183,13 @@ interface GoogleCallResult {
   method: string;
   ok: boolean;
   response?: unknown;
-  /** Encoding of `response` when it's a binary blob. Absent for JSON/text. */
+  /**
+   * Encoding of `response` when it's a binary blob. Absent for JSON/text.
+   */
   encoding?: "base64";
-  /** Hoisted from Google's error envelope when present. */
+  /**
+   * Hoisted from Google's error envelope when present.
+   */
   errorReason?: string | null;
   retryAfterSeconds?: number;
   error?: string;

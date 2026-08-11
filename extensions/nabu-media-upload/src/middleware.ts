@@ -41,7 +41,9 @@ type MediaCandidate = {
   index: number;
 };
 
-// Minimal local timeout wrapper (the core util is not on the plugin SDK surface).
+/**
+ * Minimal local timeout wrapper — the core util is not on the plugin SDK.
+ */
 async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {

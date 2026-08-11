@@ -27,7 +27,9 @@ class ResolveHttpError extends Error {
   }
 }
 
-// Chunks at RESOLVE_BATCH_MAX (100); backend rejects larger batches.
+/**
+ * Chunks at RESOLVE_BATCH_MAX (100); the backend rejects larger batches.
+ */
 export async function resolveFiles(
   api: OpenClawPluginApi,
   fileIds: number[],

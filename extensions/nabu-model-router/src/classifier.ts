@@ -33,9 +33,11 @@ function parseClassification(raw: unknown): Classification | null {
   return null;
 }
 
-// Uses Node's native https module instead of fetch() to bypass openclaw's
-// global undici EnvHttpProxyAgent dispatcher (src/infra/net/undici-global-dispatcher.ts)
-// which causes "other side closed" errors on outbound HTTPS to CF AI Gateway.
+/**
+ * node:https rather than fetch: the global undici EnvHttpProxyAgent dispatcher
+ * (src/infra/net/undici-global-dispatcher.ts) yields "other side closed" on
+ * outbound HTTPS to the CF AI Gateway.
+ */
 function httpsPost(
   url: string,
   headers: Record<string, string>,

@@ -7,9 +7,7 @@ import type { Nabu1PasswordParams } from "../nabu-1password.interface.js";
 import { buildOpArgv, runOp } from "../op-runner.js";
 import { fetchUserOpToken } from "../token.js";
 
-// ---------------------------------------------------------------------------
 // Schema — flat object, no identity field (identity comes from trusted context)
-// ---------------------------------------------------------------------------
 
 const Nabu1PasswordSchema = Type.Object(
   {
@@ -38,9 +36,7 @@ const Nabu1PasswordSchema = Type.Object(
   { additionalProperties: false },
 );
 
-// ---------------------------------------------------------------------------
 // Tool registration
-// ---------------------------------------------------------------------------
 
 export function createNabu1PasswordTool(
   api: OpenClawPluginApi,

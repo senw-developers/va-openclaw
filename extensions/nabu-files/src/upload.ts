@@ -19,9 +19,11 @@ import type {
 } from "./nabu-files.interface.js";
 import { isRetryableHttpError, withBackoff } from "./retry.js";
 
-// Keyed by Idempotency-Key so the upstream uploader and the tool_result_persist
-// hook agree on fileIds without re-POSTing. Secondary toolCallId index lets the
-// sync hook look up ids when it only has the tool call id.
+/**
+ * Keyed by Idempotency-Key so the uploader and the tool_result_persist hook
+ * agree on fileIds without re-POSTing; the secondary toolCallId index lets the
+ * sync hook look ids up when it only has the tool call id.
+ */
 const uploadCache = new Map<string, FileResource>();
 const toolCallIndex = new Map<string, number[]>();
 
@@ -129,8 +131,6 @@ export function __resetUploadCachesForTests(): void {
   toolCallIndex.clear();
 }
 
-// ---------------------------------------------------------------------------
-
 const IDEMPOTENCY_HASH_RESERVE = 9; // ":" + 8 hex chars
 const USER_PREFIX_MAX = IDEMPOTENCY_KEY_MAX - IDEMPOTENCY_HASH_RESERVE - 1;
 
@@ -171,9 +171,7 @@ function indexByToolCall(toolCallId: string | undefined, fileId: number): void {
   }
 }
 
-// ---------------------------------------------------------------------------
 // Multipart POST
-// ---------------------------------------------------------------------------
 
 type PostInput = {
   cfg: NabuFilesConfig;

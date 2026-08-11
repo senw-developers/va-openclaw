@@ -82,7 +82,10 @@ describe("nabu media-upload middleware — details.deliverables[]", () => {
     }));
     registerMediaUploader(upload);
     const middleware = createMediaUploadAgentToolResultMiddleware();
-    const res = await middleware(deliverEvent([{ path: "https://example.com/already-remote.pdf" }]), CTX);
+    const res = await middleware(
+      deliverEvent([{ path: "https://example.com/already-remote.pdf" }]),
+      CTX,
+    );
     expect(upload).not.toHaveBeenCalled();
     expect(res).toBeUndefined(); // no candidates → no rewrite
   });

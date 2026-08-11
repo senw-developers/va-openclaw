@@ -16,9 +16,13 @@ import {
 import type { Nabu1PasswordParams, OpOperation } from "./nabu-1password.interface.js";
 import { fingerprint } from "./token.js";
 
-/** Thrown when the requested operation is outside the read-only whitelist. */
+/**
+ * Thrown when the requested operation is outside the read-only whitelist.
+ */
 export class OperationNotAllowedError extends Error {}
-/** Thrown when a required field for an operation is missing or malformed. */
+/**
+ * Thrown when a required field for an operation is missing or malformed.
+ */
 export class MissingArgError extends Error {}
 
 /** Reject control characters (incl. newlines) in any value forwarded to op.
@@ -34,11 +38,9 @@ function requireSafe(label: string, value: string): string {
 }
 
 /**
- * Map a validated operation + params to the exact `op` argv.
- *
- * Pure and total over the read-only operation set; throws for any operation
- * outside the whitelist or any missing required field. This is the load-bearing
- * boundary — argv is never built from free-form input.
+ * Map a validated operation + params to the exact `op` argv. Throws outside
+ * the read-only whitelist or on a missing field — this is the load-bearing
+ * boundary; argv is never built from free-form input.
  */
 export function buildOpArgv(operation: string, params: Nabu1PasswordParams): string[] {
   if (!(OP_OPERATIONS as readonly string[]).includes(operation)) {
@@ -82,7 +84,9 @@ export function buildOpArgv(operation: string, params: Nabu1PasswordParams): str
   }
 }
 
-/** Structured tool result for one `op` invocation. */
+/**
+ * Structured tool result for one `op` invocation.
+ */
 export interface OpRunResult {
   operation: OpOperation;
   ok: boolean;
@@ -95,11 +99,9 @@ export interface OpRunResult {
 }
 
 /**
- * Run `op` with the user's token scoped to the CHILD env only.
- *
- * A minimal baseEnv keeps the gateway's other secrets out of the child;
- * OP_CACHE=false stops op from writing the user's secret to a shared on-disk
- * cache. The token never touches the gateway's process.env.
+ * Run `op` with the token scoped to the CHILD env only — it never touches the
+ * gateway's process.env. A minimal baseEnv keeps other secrets out, and
+ * OP_CACHE=false stops op writing the secret to a shared on-disk cache.
  */
 export async function runOp(
   api: OpenClawPluginApi,
