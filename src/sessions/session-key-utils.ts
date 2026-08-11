@@ -5,10 +5,12 @@ import {
   normalizeOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
 import {
+  API_RELAY_PREFIX,
   DM_MARKERS,
   HTTP_USER_PREFIXES,
   MAX_DM_MARKER_POSITION,
   MAX_THREAD_STRIPS,
+  parseApiRelayUserId,
   TAIL_FAIL_CLOSED_TOKENS,
 } from "./session-key-shapes.js";
 
@@ -294,6 +296,13 @@ export function parseSessionOwner(sessionKey: string | undefined | null): Sessio
   // HTTP per-user prefix shape
   if (HTTP_USER_PREFIXES.has(head) && restParts.length >= 2) {
     const userId = normalizeOptionalString(restParts.slice(1).join(":"));
+    return userId ? { userId } : null;
+  }
+
+  // Relay shape: userId sits at a fixed index, so it needs its own branch
+  // rather than a HTTP_USER_PREFIXES entry, which would take the whole tail.
+  if (head === API_RELAY_PREFIX) {
+    const userId = parseApiRelayUserId(restParts);
     return userId ? { userId } : null;
   }
 

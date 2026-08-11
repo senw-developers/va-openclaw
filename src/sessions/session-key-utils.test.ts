@@ -183,3 +183,31 @@ describe("parseSessionOwner v2 — adversarial tail-sentinel fail-closed", () =>
     expect(parseSessionOwner("agent:main:slack:dm:U1:thread:")).toBeNull();
   });
 });
+
+describe("parseSessionOwner v2 — backend relay shape", () => {
+  it("api:<org>:<userId>:<ts> yields the middle userId, not the tail", () => {
+    expect(parseSessionOwner("agent:main:api:12:42:1699999999")).toEqual({ userId: "42" });
+  });
+
+  it("thread suffix strips before the owner is read", () => {
+    expect(parseSessionOwner("agent:main:api:12:42:1699999999:thread:resp_abc")).toEqual({
+      userId: "42",
+    });
+  });
+
+  it("non-numeric userId fails closed — only app_users.id owns files", () => {
+    expect(parseSessionOwner("agent:main:api:12:admin:1699999999")).toBeNull();
+  });
+
+  it("short key missing the timestamp fails closed", () => {
+    expect(parseSessionOwner("agent:main:api:12:42")).toBeNull();
+  });
+
+  it("bare 'api' head with no segments fails closed", () => {
+    expect(parseSessionOwner("agent:main:api")).toBeNull();
+  });
+
+  it("'api' in a DM tail is a sentinel, not an owner", () => {
+    expect(parseSessionOwner("agent:main:telegram:direct:U1:api:42")).toBeNull();
+  });
+});
