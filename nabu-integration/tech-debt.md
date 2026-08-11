@@ -96,6 +96,23 @@ model choice stands. Closing it later means metering from the `llm_output`
 payload we already send (provider-agnostic token counts, no cost) rather than
 changing the model. Backend notified: memo `223c5bc49ecf`.
 
+### C-5 — usage-ingest has never resolved its backend host (2026-08-11)
+
+The seed points nabu-gateway at `http://nabu-gateway:6200`. That name only
+resolves in the backend's _development_ compose; in staging and production
+their containers sit on `app-network` alone, and tenants run on a different
+host and cloud provider joined only by NetBird. So the metering POST has been
+failing DNS since first deployment — this predates ADR-0008 rather than being
+caused by it. Provenance: our own `e8770727e4` (2026-05-15) fixed the service
+and port but left a dev-only hostname. Wider than one plugin: the backend has
+no push path for nabu-files or nabu-gateway `apiBaseUrl` at all, so three
+plugins are only reconfigurable via `config.patch`. Settle on the host with
+`docker exec nabu-<N>-gateway getent hosts nabu-gateway` (expect exit 2).
+Proposed fix: one public HTTPS base for all five plugins, which needs https
+transport in nabu-gateway/nabu-email and removal of the http-only guards.
+⚠ If the live `NABU_PUBLIC_API_URL` is https, nabu-1password and
+nabu-google-workspace are dead today too — both hard-reject non-`http:`.
+
 ## Backend-gated contract gaps (verified in va-core-nest 2026-08-10)
 
 Findings from a read-only sweep of the sibling backend at `../va-core-nest`
@@ -103,6 +120,17 @@ Findings from a read-only sweep of the sibling backend at `../va-core-nest`
 our ported surfaces can be enabled — and three of them break on image rebuild.
 
 ### C-1 — SMTP rejects `agentId`: nabu-email breaks on rebuild (BLOCKER)
+
+**Date-bounded 2026-08-11: production is NOT broken today.** `agentId` entered
+the body in `72bd614c8f` (parity S6, 2026-08-07); the deployed image is the
+pre-port `2026.4.9` line, whose last commit `fb68518953` sends raw tool params
+only. So this is strictly a rebuild gate. Two asks recorded with the backend:
+their DTO field must be **optional-on-arrival** treating a missing `agentId` as
+`main` (enforcing a required field while April images are live would convert
+the gate into a live outage), and our own `OPENCLAW_ORGANIZATION_ID`
+fail-closed throw (`nabu-email/index.ts:56-59`, same commit) must be verified
+present in every tenant `.env` before rebuild — it is an independent break
+vector that would be misdiagnosed as this one.
 
 `nabu_email_send` / `nabu_email_fetch` spread `agentId` into the request body;
 the backend's send/fetch DTOs have no such field and its global ValidationPipe
