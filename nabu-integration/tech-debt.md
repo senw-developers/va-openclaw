@@ -51,13 +51,22 @@ Operator confirmed 2026-08-10: ALL keys rotated (incl. the two live local
 
 ## Behavior residuals
 
-### R-1 — SSE history `refreshAsync` re-reads un-enriched (fork #30 residual)
+### R-1 — SSE history `refreshAsync` re-reads un-enriched (FIXED 2026-08-11)
 
-The initial SSE history snapshot now carries fileRefs
+The initial SSE history snapshot carries fileRefs
 (`src/gateway/sessions-history-http.ts` — enriched on purpose), but
-`SessionHistorySseState.refreshAsync()` re-reads raw transcripts without
-enrichment, so a mid-stream full-history refresh drops fileRefs until reload.
-Close by threading an enrichment callback through `SessionHistorySseState`.
+`SessionHistorySseState.refreshAsync()` re-read raw transcripts without
+enrichment, so a mid-stream full-history refresh dropped fileRefs until reload.
+Fixed by threading an optional `enrichRawMessages` callback through
+`SessionHistorySseState`, applied only on the refresh path
+(`src/gateway/session-history-state.ts:189,325-333`; caller wiring at
+`src/gateway/sessions-history-http.ts`). The callback re-reads `userAttachments`
+fresh, so a file attached mid-stream also resolves on refresh. The initial build
+stays pre-enriched by the caller — no double enrichment. Regression tests prove
+the refreshed snapshot reflects the callback's output, and that omitting it
+leaves the raw disk read untransformed. Cost: +33/-3 across two upstream files —
+a new but small conflict surface, accepted because the fileRefs loss is
+user-visible.
 
 ### R-2 — dropped senw hunks (deliberate divergences from pin `9571e4775f`)
 

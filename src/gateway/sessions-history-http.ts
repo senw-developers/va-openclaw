@@ -223,14 +223,31 @@ export async function handleSessionHistoryHttpRequest(
       sessionFile: entry.sessionFile,
     },
     // Enriched on purpose (fork #30): SSE initial history must carry the same
-    // fileRefs as the JSON path; refreshAsync re-reads are un-enriched — see
-    // nabu-integration/tech-debt.md.
+    // fileRefs as the JSON path. refreshAsync re-reads from disk, so it re-runs
+    // the same enrichment below — re-reading userAttachments so a file attached
+    // mid-stream also resolves.
     rawMessages: enrichedSnapshot,
     rawTranscriptSeq: boundedSnapshot?.totalMessages,
     totalRawMessages: boundedSnapshot?.totalMessages,
     maxChars: effectiveMaxChars,
     limit,
     cursor,
+    enrichRawMessages: async (rawMessages) => {
+      const refreshedAttachments = entry?.sessionId
+        ? readUserAttachmentFileIdsByMessage(
+            resolveSessionFilePath(
+              entry.sessionId,
+              entry.sessionFile ? { sessionFile: entry.sessionFile } : undefined,
+              target.storePath ? { sessionsDir: path.dirname(target.storePath) } : undefined,
+            ),
+          )
+        : undefined;
+      return enrichMessagesWithFileRefs(rawMessages, {
+        requestId: `sessions-history-http:refresh:${target.canonicalKey}`,
+        ...(refreshedAttachments ? { userAttachments: refreshedAttachments } : {}),
+        ...(owner ? { userId: owner.userId } : {}),
+      });
+    },
   });
   sentHistory = sseState.snapshot();
   setSseHeaders(res);

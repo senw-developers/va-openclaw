@@ -181,6 +181,12 @@ export class SessionHistorySseState {
   private readonly cursor: string | undefined;
   private sentHistory: PaginatedSessionHistory;
   private rawTranscriptSeq: number;
+  /**
+   * Re-applies fileRefs enrichment to disk-re-read messages on refresh. Without
+   * it a mid-stream full-history refresh drops the fileRefs the initial snapshot
+   * carried, until reload (fork #30). The initial build is pre-enriched upstream.
+   */
+  private readonly enrichRawMessages: ((rawMessages: unknown[]) => Promise<unknown[]>) | undefined;
 
   static fromRawSnapshot(params: {
     target: SessionHistoryTranscriptTarget;
@@ -190,6 +196,7 @@ export class SessionHistorySseState {
     maxChars?: number;
     limit?: number;
     cursor?: string;
+    enrichRawMessages?: (rawMessages: unknown[]) => Promise<unknown[]>;
   }): SessionHistorySseState {
     return new SessionHistorySseState({
       target: params.target,
@@ -199,6 +206,7 @@ export class SessionHistorySseState {
       initialRawMessages: params.rawMessages,
       rawTranscriptSeq: params.rawTranscriptSeq,
       totalRawMessages: params.totalRawMessages,
+      enrichRawMessages: params.enrichRawMessages,
     });
   }
 
@@ -210,11 +218,13 @@ export class SessionHistorySseState {
     initialRawMessages: unknown[];
     rawTranscriptSeq?: number;
     totalRawMessages?: number;
+    enrichRawMessages?: (rawMessages: unknown[]) => Promise<unknown[]>;
   }) {
     this.target = params.target;
     this.maxChars = params.maxChars ?? DEFAULT_CHAT_HISTORY_TEXT_MAX_CHARS;
     this.limit = params.limit;
     this.cursor = params.cursor;
+    this.enrichRawMessages = params.enrichRawMessages;
     const snapshot = this.buildSnapshot({
       rawMessages: params.initialRawMessages,
       ...(typeof params.rawTranscriptSeq === "number"
@@ -324,7 +334,10 @@ export class SessionHistorySseState {
 
   async refreshAsync(): Promise<PaginatedSessionHistory> {
     const rawSnapshot = await this.readRawSnapshotAsync();
-    const snapshot = this.buildSnapshot(rawSnapshot);
+    const enrichedSnapshot = this.enrichRawMessages
+      ? { ...rawSnapshot, rawMessages: await this.enrichRawMessages(rawSnapshot.rawMessages) }
+      : rawSnapshot;
+    const snapshot = this.buildSnapshot(enrichedSnapshot);
     this.rawTranscriptSeq = snapshot.rawTranscriptSeq;
     this.sentHistory = snapshot.history;
     return snapshot.history;

@@ -45,6 +45,13 @@ function newStateWithUserText(text: string): SessionHistorySseState {
   return newState([userTextMessage(text, 1)]);
 }
 
+function firstMessageText(history: {
+  messages: Array<Record<string, unknown>>;
+}): string | undefined {
+  const first = history.messages[0] as { content?: Array<{ text?: string }> } | undefined;
+  return first?.content?.[0]?.text;
+}
+
 function expectOnlyAssistantText(snapshot: HistorySnapshot, text: string, seq: number): void {
   expect(snapshot.history.messages).toEqual([assistantTextMessage(text, seq)]);
 }
@@ -432,6 +439,43 @@ describe("SessionHistorySseState", () => {
     } finally {
       fullReadSpy.mockRestore();
       tailReadSpy.mockRestore();
+    }
+  });
+
+  test("re-applies enrichRawMessages on refresh (fork #30 fileRefs regression)", async () => {
+    const fullReadSpy = vi
+      .spyOn(sessionUtils, "readSessionMessagesAsync")
+      .mockResolvedValue([assistantTextMessage("raw-from-disk", 8)]);
+    try {
+      const state = newState([assistantTextMessage("enriched-initial", 7)], {
+        enrichRawMessages: async (rawMessages) =>
+          rawMessages.map((message) => {
+            const text = (message as { content?: Array<{ text?: string }> }).content?.[0]?.text;
+            return assistantTextMessage(`enriched:${text}`, 8);
+          }),
+      });
+
+      const refreshed = await state.refreshAsync();
+
+      // The refreshed snapshot must reflect the callback's output, not the raw
+      // disk read — proving enrichment runs on the refresh path.
+      expect(firstMessageText(refreshed)).toBe("enriched:raw-from-disk");
+      expect(fullReadSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      fullReadSpy.mockRestore();
+    }
+  });
+
+  test("refresh without enrichRawMessages leaves the raw disk read untransformed", async () => {
+    const fullReadSpy = vi
+      .spyOn(sessionUtils, "readSessionMessagesAsync")
+      .mockResolvedValue([assistantTextMessage("raw-from-disk", 8)]);
+    try {
+      const state = newState([assistantTextMessage("initial", 7)]);
+      const refreshed = await state.refreshAsync();
+      expect(firstMessageText(refreshed)).toBe("raw-from-disk");
+    } finally {
+      fullReadSpy.mockRestore();
     }
   });
 
