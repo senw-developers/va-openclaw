@@ -1,4 +1,3 @@
-import { coerceSecretRef } from "openclaw/plugin-sdk/secret-ref-runtime";
 import type { OpenClawPluginApi } from "../api.js";
 import {
   DEFAULT_API_BASE_URL,
@@ -32,7 +31,12 @@ export function getLivePluginConfig(api: OpenClawPluginApi): NabuGoogleWorkspace
   const cfg = api.runtime.config.current() as OpenClawConfigShape;
   const entry = cfg.plugins?.entries?.[PLUGIN_ID]?.config;
   return {
-    apiToken: resolveApiTokenInput(entry?.apiToken),
+    /**
+     * Core resolves the manifest's secretInputs SecretRef before runtime sees it,
+     * on startup and on every config.patch. A non-string means resolution did not
+     * run (plugin disabled), so fail closed rather than send "[object Object]".
+     */
+    apiToken: typeof entry?.apiToken === "string" ? entry.apiToken : "",
     apiBaseUrl: entry?.apiBaseUrl ?? DEFAULT_API_BASE_URL,
     tokenVersion: typeof entry?.tokenVersion === "number" ? entry.tokenVersion : 0,
     refreshIntervalMs:
@@ -40,22 +44,9 @@ export function getLivePluginConfig(api: OpenClawPluginApi): NabuGoogleWorkspace
   };
 }
 
-/** Accept a literal token or an env SecretRef {source, provider, id} (nabu-files pattern). */
-function resolveApiTokenInput(value: unknown): string {
-  if (typeof value === "string") {
-    return value;
-  }
-  const ref = coerceSecretRef(value);
-  if (!ref) {
-    return "";
-  }
-  if (ref.source === "env") {
-    return process.env[ref.id]?.trim() ?? "";
-  }
-  return "";
-}
-
-/** Returns true when the plugin has a bearer token configured to call NestJS. */
+/**
+ * Returns true when the plugin has a bearer token configured to call NestJS.
+ */
 export function hasApiToken(config: NabuGoogleWorkspaceConfig): boolean {
   return typeof config.apiToken === "string" && config.apiToken.length > 0;
 }

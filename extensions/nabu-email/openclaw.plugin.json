@@ -10,6 +10,16 @@
     "tools": ["nabu_email_send", "nabu_email_fetch"]
   },
   "enabledByDefault": true,
+  "configContracts": {
+    "secretInputs": {
+      "paths": [
+        {
+          "path": "apiToken",
+          "expected": "string"
+        }
+      ]
+    }
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

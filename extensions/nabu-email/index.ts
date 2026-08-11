@@ -1,18 +1,16 @@
 import * as http from "node:http";
 import * as https from "node:https";
 import { definePluginEntry, type OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
-import { coerceSecretRef } from "openclaw/plugin-sdk/secret-ref-runtime";
 import { Type } from "typebox";
 
-// ---------------------------------------------------------------------------
-// Plugin config shape — mirrors plugins.entries.nabu-email.config
-// ---------------------------------------------------------------------------
+/**
+ * Mirrors plugins.entries.nabu-email.config.
+ */
 interface NabuEmailConfig {
   apiToken: string;
   apiBaseUrl?: string;
 }
 
-// ---------------------------------------------------------------------------
 /**
  * Live config per call: current() returns the runtime snapshot that gateway
  * config.patch refreshes — the token-rotation path NestJS uses (T8). Direct
@@ -22,31 +20,20 @@ function getLivePluginConfig(api: OpenClawPluginApi): NabuEmailConfig {
   const cfg = api.runtime.config.current();
   const pluginEntry = (cfg as any)?.plugins?.entries?.["nabu-email"]?.config;
   return {
-    apiToken: resolveApiTokenInput(pluginEntry?.apiToken),
+    /**
+     * Core resolves the manifest's secretInputs SecretRef before runtime sees it,
+     * on startup and on every config.patch. A non-string means resolution did not
+     * run (plugin disabled), so fail closed rather than send "[object Object]".
+     */
+    apiToken: typeof pluginEntry?.apiToken === "string" ? pluginEntry.apiToken : "",
     apiBaseUrl: pluginEntry?.apiBaseUrl ?? "http://app:6001",
   };
 }
 
-/** Accept a literal token or an env SecretRef {source, provider, id} (nabu-files pattern). */
-function resolveApiTokenInput(value: unknown): string {
-  if (typeof value === "string") {
-    return value;
-  }
-  const ref = coerceSecretRef(value);
-  if (!ref) {
-    return "";
-  }
-  if (ref.source === "env") {
-    return process.env[ref.id]?.trim() ?? "";
-  }
-  return "";
-}
-
 /**
- * Composed tenancy (G1): the backend scopes routing per org, so the header is
- * always sent. Absent env degrades to an empty header rather than throwing —
- * a call-time throw would take email down on any tenant provisioned without
- * the var, which is a deploy defect, not a request-level one.
+ * Composed tenancy (G1): the org header is always sent. A missing env var
+ * degrades to an empty header rather than throwing — it is a provisioning
+ * defect, and a per-request throw would take email down at rebuild.
  */
 function resolveOrganizationId(api: OpenClawPluginApi): string {
   const organizationId = process.env.OPENCLAW_ORGANIZATION_ID?.trim();
@@ -57,11 +44,10 @@ function resolveOrganizationId(api: OpenClawPluginApi): string {
   return organizationId;
 }
 
-// ---------------------------------------------------------------------------
-// Internal helper — POST to the NestJS SMTP API.
-// Node http/https rather than fetch: OpenClaw's global undici proxy dispatcher
-// breaks plugin outbound TLS.
-// ---------------------------------------------------------------------------
+/**
+ * POST to the backend SMTP API. node:http/https rather than fetch — the
+ * global undici proxy dispatcher breaks plugin outbound TLS.
+ */
 async function apiPost(
   api: OpenClawPluginApi,
   pluginConfig: NabuEmailConfig,
@@ -115,10 +101,9 @@ function parseJsonSafe(raw: string): unknown {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Plugin entry point
-// Docs: https://docs.openclaw.ai/plugins/building-plugins
-// ---------------------------------------------------------------------------
+/**
+ * Plugin entry. Docs: https://docs.openclaw.ai/plugins/building-plugins
+ */
 export default definePluginEntry({
   id: "nabu-email",
   name: "@va-team/nabu-email",
@@ -195,11 +180,9 @@ export default definePluginEntry({
       { name: "nabu_email_fetch", optional: true },
     );
 
-    // -----------------------------------------------------------------------
     // Gateway RPC — optional receipt probe for a token push. No backend caller
     // exists today; the token is read live per call from the runtime config
     // snapshot, so config.patch alone is sufficient and needs no restart.
-    // -----------------------------------------------------------------------
     api.registerGatewayMethod("nabu.email.configure", ({ respond }) => {
       respond(true, { ok: true, plugin: api.id });
     });
