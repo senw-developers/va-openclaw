@@ -2,7 +2,13 @@ import { jsonResult, stringEnum } from "openclaw/plugin-sdk/channel-actions";
 import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import { Type } from "typebox";
 import type { AnyAgentTool, OpenClawPluginApi, OpenClawPluginToolContext } from "../../api.js";
-import { LOG_PREFIX, OP_OPERATIONS, TOOL_NAME } from "../nabu-1password.constants.js";
+import { getLivePluginConfig } from "../config.js";
+import {
+  LOG_PREFIX,
+  MAIN_AGENT_ID,
+  OP_OPERATIONS,
+  TOOL_NAME,
+} from "../nabu-1password.constants.js";
 import type { Nabu1PasswordParams } from "../nabu-1password.interface.js";
 import { buildOpArgv, runOp } from "../op-runner.js";
 import { fetchUserOpToken } from "../token.js";
@@ -53,6 +59,14 @@ export function createNabu1PasswordTool(
     async execute(_toolCallId, params) {
       const p = params as Nabu1PasswordParams;
       try {
+        // Product gate the dashboard toggles, NOT a security boundary: agentId is
+        // client-influenced and the tenant sandbox is off, so the backend enforces.
+        const agentId = context.agentId ?? "";
+        if (!getLivePluginConfig(api).allowNonMainAgents && agentId !== MAIN_AGENT_ID) {
+          return jsonResult({
+            error: `Agent "${agentId || "unknown"}" may not use 1Password — an admin can enable access for non-main agents.`,
+          });
+        }
         const rawId = context.requesterSenderId;
         if (!rawId) {
           return jsonResult({

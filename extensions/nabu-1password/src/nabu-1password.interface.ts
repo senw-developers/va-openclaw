@@ -8,6 +8,11 @@ import { OP_OPERATIONS } from "./nabu-1password.constants.js";
 export interface Nabu1PasswordConfig {
   apiToken: string;
   apiBaseUrl?: string;
+  /**
+   * Product gate the dashboard toggles: when false (default) only agent `main`
+   * may use this plugin. NOT a security boundary — the backend enforces.
+   */
+  allowNonMainAgents: boolean;
 }
 
 /**

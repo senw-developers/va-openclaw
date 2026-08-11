@@ -131,6 +131,7 @@
     }
   },
   "agents": {
+    "list": [{ "id": "main", "default": true }],
     "defaults": {
       "heartbeat": {
         "every": "0m"

@@ -78,3 +78,9 @@ export const TOOL_NAME = "nabu_google";
  * Plugin id — keep aligned with openclaw.plugin.json:id.
  */
 export const PLUGIN_ID = "nabu-google-workspace";
+
+/**
+ * Reserved id of the organization's primary agent. Non-main agents are gated by
+ * `allowNonMainAgents` — a product toggle, not a security boundary.
+ */
+export const MAIN_AGENT_ID = "main";

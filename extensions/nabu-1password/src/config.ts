@@ -3,7 +3,12 @@ import { DEFAULT_API_BASE_URL, PLUGIN_ID } from "./nabu-1password.constants.js";
 import type { Nabu1PasswordConfig } from "./nabu-1password.interface.js";
 
 interface OpenClawConfigShape {
-  plugins?: { entries?: Record<string, { config?: { apiToken?: unknown; apiBaseUrl?: string } }> };
+  plugins?: {
+    entries?: Record<
+      string,
+      { config?: { apiToken?: unknown; apiBaseUrl?: string; allowNonMainAgents?: unknown } }
+    >;
+  };
 }
 
 /**
@@ -22,6 +27,7 @@ export function getLivePluginConfig(api: OpenClawPluginApi): Nabu1PasswordConfig
      */
     apiToken: typeof entry?.apiToken === "string" ? entry.apiToken : "",
     apiBaseUrl: entry?.apiBaseUrl ?? DEFAULT_API_BASE_URL,
+    allowNonMainAgents: entry?.allowNonMainAgents === true,
   };
 }
 

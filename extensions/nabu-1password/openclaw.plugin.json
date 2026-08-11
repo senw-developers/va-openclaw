@@ -24,6 +24,10 @@
     "type": "object",
     "additionalProperties": false,
     "properties": {
+      "allowNonMainAgents": {
+        "type": "boolean",
+        "description": "When true, agents other than `main` may use this plugin. Default false. Product gate only — the backend remains the authorization boundary."
+      },
       "apiToken": {
         "type": ["string", "object"],
         "description": "Per-organization skill bearer issued by the OnePassword module on the Nabu backend (sent as x-skill-token; requests also carry env-derived x-organization-id). Accepts either a literal string or a SecretRef object {source, provider, id} resolved from env."
@@ -35,6 +39,9 @@
     }
   },
   "uiHints": {
+    "allowNonMainAgents": {
+      "label": "Allow non-main agents"
+    },
     "apiToken": {
       "label": "API Token",
       "sensitive": true

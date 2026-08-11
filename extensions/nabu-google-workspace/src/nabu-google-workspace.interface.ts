@@ -9,6 +9,11 @@ export interface NabuGoogleWorkspaceConfig {
    */
   apiToken: string;
   /**
+   * Product gate the dashboard toggles: when false (default) only agent `main`
+   * may use this plugin. NOT a security boundary — the backend enforces.
+   */
+  allowNonMainAgents: boolean;
+  /**
    * NestJS backend base URL — Docker-internal (default: http://app:6001).
    */
   apiBaseUrl?: string;

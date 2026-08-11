@@ -9,6 +9,21 @@ import { Type } from "typebox";
 interface NabuEmailConfig {
   apiToken: string;
   apiBaseUrl?: string;
+  allowNonMainAgents: boolean;
+}
+
+const MAIN_AGENT_ID = "main";
+
+/**
+ * Product gate the dashboard toggles, NOT a security boundary: `agentId` is
+ * client-influenced and the tenant sandbox is off, so the backend stays the
+ * enforcement point. Returns a refusal message, or null when the call may run.
+ */
+function refuseNonMainAgent(agentId: string, cfg: NabuEmailConfig): string | null {
+  if (cfg.allowNonMainAgents || agentId === MAIN_AGENT_ID) {
+    return null;
+  }
+  return `nabu-email: agent "${agentId}" may not use the organization mailbox — an admin can enable access for non-main agents.`;
 }
 
 /**
@@ -27,6 +42,7 @@ function getLivePluginConfig(api: OpenClawPluginApi): NabuEmailConfig {
      */
     apiToken: typeof pluginEntry?.apiToken === "string" ? pluginEntry.apiToken : "",
     apiBaseUrl: pluginEntry?.apiBaseUrl ?? "http://app:6001",
+    allowNonMainAgents: pluginEntry?.allowNonMainAgents === true,
   };
 }
 
@@ -137,6 +153,10 @@ export default definePluginEntry({
             return { content: [{ type: "text", text: msg }], details: { error: msg } };
           }
           const cfg = getLivePluginConfig(api);
+          const refusal = refuseNonMainAgent(agentId, cfg);
+          if (refusal) {
+            return { content: [{ type: "text", text: refusal }], details: { error: refusal } };
+          }
           const raw = await apiPost(api, cfg, "send", { ...(params as object), agentId });
           return { content: [{ type: "text", text: raw }], details: parseJsonSafe(raw) };
         },
@@ -173,6 +193,10 @@ export default definePluginEntry({
             return { content: [{ type: "text", text: msg }], details: { error: msg } };
           }
           const cfg = getLivePluginConfig(api);
+          const refusal = refuseNonMainAgent(agentId, cfg);
+          if (refusal) {
+            return { content: [{ type: "text", text: refusal }], details: { error: refusal } };
+          }
           const raw = await apiPost(api, cfg, "fetch", { ...(params as object), agentId });
           return { content: [{ type: "text", text: raw }], details: parseJsonSafe(raw) };
         },

@@ -14,6 +14,7 @@ interface OpenClawConfigShape {
         config?: {
           apiToken?: unknown;
           apiBaseUrl?: string;
+          allowNonMainAgents?: unknown;
           tokenVersion?: unknown;
           refreshIntervalMs?: unknown;
         };
@@ -38,6 +39,7 @@ export function getLivePluginConfig(api: OpenClawPluginApi): NabuGoogleWorkspace
      */
     apiToken: typeof entry?.apiToken === "string" ? entry.apiToken : "",
     apiBaseUrl: entry?.apiBaseUrl ?? DEFAULT_API_BASE_URL,
+    allowNonMainAgents: entry?.allowNonMainAgents === true,
     tokenVersion: typeof entry?.tokenVersion === "number" ? entry.tokenVersion : 0,
     refreshIntervalMs:
       typeof entry?.refreshIntervalMs === "number" ? entry.refreshIntervalMs : DEFAULT_REFRESH_MS,

@@ -40,3 +40,29 @@ describe("getLivePluginConfig apiToken resolution", () => {
     expect(hasApiToken(cfg)).toBe(false);
   });
 });
+
+describe("allowNonMainAgents gate", () => {
+  function apiWithFlag(allowNonMainAgents: unknown): OpenClawPluginApi {
+    return {
+      runtime: {
+        config: {
+          current: () => ({
+            plugins: {
+              entries: { "nabu-1password": { config: { apiToken: "t", allowNonMainAgents } } },
+            },
+          }),
+        },
+      },
+    } as unknown as OpenClawPluginApi;
+  }
+
+  it("defaults to false when the key is absent — only main may use the plugin", () => {
+    expect(getLivePluginConfig(apiWithConfig("t")).allowNonMainAgents).toBe(false);
+  });
+
+  it("is true only for the boolean true, never a truthy string", () => {
+    expect(getLivePluginConfig(apiWithFlag(true)).allowNonMainAgents).toBe(true);
+    expect(getLivePluginConfig(apiWithFlag("true")).allowNonMainAgents).toBe(false);
+    expect(getLivePluginConfig(apiWithFlag(1)).allowNonMainAgents).toBe(false);
+  });
+});

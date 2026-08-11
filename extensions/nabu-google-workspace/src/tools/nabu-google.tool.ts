@@ -2,12 +2,14 @@ import { jsonResult, stringEnum } from "openclaw/plugin-sdk/channel-actions";
 import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import { Type } from "typebox";
 import type { AnyAgentTool, OpenClawPluginApi, OpenClawPluginToolContext } from "../../api.js";
+import { getLivePluginConfig } from "../config.js";
 import {
   ALLOWED_METHODS,
   ALLOWED_PATH_PREFIXES,
   GOOGLE_API_BASE,
   GOOGLE_FETCH_TIMEOUT_MS,
   LOG_PREFIX,
+  MAIN_AGENT_ID,
   TOOL_NAME,
 } from "../nabu-google-workspace.constants.js";
 import { getAccessTokenForUser, invalidateCachedToken } from "../token.js";
@@ -125,6 +127,14 @@ export function createNabuGoogleTool(
           return jsonResult({
             error:
               "OPENCLAW_ORGANIZATION_ID is not set on the gateway; tenant identity unresolvable.",
+          });
+        }
+        // Product gate the dashboard toggles, NOT a security boundary: agentId is
+        // client-influenced and the tenant sandbox is off, so the backend enforces.
+        const agentId = context.agentId ?? "";
+        if (!getLivePluginConfig(api).allowNonMainAgents && agentId !== MAIN_AGENT_ID) {
+          return jsonResult({
+            error: `Agent "${agentId || "unknown"}" may not use Google Workspace — an admin can enable access for non-main agents.`,
           });
         }
         // Backend connections are keyed on the numeric app user id, so a
