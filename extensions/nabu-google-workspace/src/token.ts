@@ -19,24 +19,17 @@ import type {
   NabuGoogleWorkspaceConfig,
 } from "./nabu-google-workspace.interface.js";
 
-// ---------------------------------------------------------------------------
-// Fingerprint
-// ---------------------------------------------------------------------------
-
-/** First 12 hex of sha256 — safe to log. Never log the raw access token. */
+/**
+ * First 12 hex of sha256 — safe to log. Never log the raw access token.
+ */
 export function fingerprint(token: string): string {
   return createHash("sha256").update(token).digest("hex").slice(0, 12);
 }
 
-// ---------------------------------------------------------------------------
-// Per-(orgId, channel, userId) in-memory cache
-// ---------------------------------------------------------------------------
-
 /**
- * Access tokens are scoped per end-user (the human owner of the conversation
- * — `requesterSenderId` from the gateway tool context). The cache key also
- * includes `channel` because the same userId string (e.g. a phone number)
- * can appear across channels for different humans.
+ * Access tokens are scoped per end-user (`requesterSenderId` from the tool
+ * context). `channel` is in the key because the same userId string — a phone
+ * number, say — can belong to different humans on different channels.
  */
 const tokenCache = new Map<string, CachedAccessToken>();
 
@@ -54,12 +47,16 @@ function isFresh(entry: CachedAccessToken, currentTokenVersion: number): boolean
   return now < refreshAt && now < hardExpiry;
 }
 
-/** Drop all cached tokens for this gateway. Called on RPC refresh + stop. */
+/**
+ * Drop all cached tokens for this gateway. Called on RPC refresh + stop.
+ */
 export function clearTokenCache(): void {
   tokenCache.clear();
 }
 
-/** Drop a specific entry. Called after an explicit upstream 401 / re-consent signal. */
+/**
+ * Drop a specific entry. Called after an explicit upstream 401 / re-consent signal.
+ */
 export function invalidateCachedToken(
   organizationId: string,
   channel: string,
@@ -68,23 +65,55 @@ export function invalidateCachedToken(
   tokenCache.delete(cacheKey(organizationId, channel, userId));
 }
 
-// ---------------------------------------------------------------------------
-// HTTP — fetch a fresh access token from NestJS
-// ---------------------------------------------------------------------------
+/**
+ * Reads the backend's error envelope. The union is deliberate: files-api emits
+ * `{code,message}` while google-workspace/1P/SMTP emit `{error,reason?,detail?}`,
+ * and both conventions are live.
+ */
+function describeBackendError(body: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null) {
+    return null;
+  }
+  const envelope = parsed as Record<string, unknown>;
+  const parts = ["code", "error", "message", "reason", "detail"]
+    .map((key) => envelope[key])
+    .filter((value): value is string => typeof value === "string" && value.length > 0);
+  return parts.length > 0 ? [...new Set(parts)].join(": ") : null;
+}
 
 /**
- * Pull a short-lived access token from NestJS. Two-factor auth:
- *
- *  - `x-skill-token`     — opaque per-org bearer pushed into the plugin
- *                          config via `config.patch`.
- *  - `x-organization-id` — numeric org id from docker-compose env, never
- *                          written into `openclaw.json`, so it is NOT
- *                          prompt-extractable through the agent's shell.
- *
- * NestJS resolves `(organizationId, channel, userId)` → encrypted refresh_token,
- * runs the Google refresh exchange (single-flight via Redis lock), and
- * returns the access_token + expiry + granted scopes. Refresh tokens
- * never leave the backend.
+ * Turns a broker status into advice the user can act on. Google Workspace is
+ * per-user (backend keys `(config_id, user_id)`), so 404 means *you* have not
+ * connected — unlike 1Password, whose identical-looking 404 is org-wide.
+ */
+export function mapBrokerError(status: number, body: string): string {
+  const detail = describeBackendError(body);
+  const suffix = detail ? ` (${detail})` : "";
+  if (status === 401) {
+    return "Google Workspace broker rejected the plugin credential (check NABU_GOOGLE_WORKSPACE_SKILL_TOKEN).";
+  }
+  if (status === 403) {
+    return `Google Workspace is connected for this organization, but you have not been granted access — ask an organization admin to grant it.${suffix}`;
+  }
+  if (status === 404) {
+    return `You have not connected Google Workspace — connect it in the dashboard.${suffix}`;
+  }
+  if (status === 410) {
+    return `Your Google Workspace connection was revoked and must be reconnected in the dashboard.${suffix}`;
+  }
+  return `Google Workspace broker failed (${status})${suffix}.`;
+}
+
+/**
+ * Pull a short-lived access token from the backend. Two-factor: `x-skill-token`
+ * (per-org bearer via config.patch) plus `x-organization-id` (env-only, so it
+ * is not prompt-extractable). Refresh tokens never leave the backend.
  */
 async function fetchAccessToken(
   pluginConfig: NabuGoogleWorkspaceConfig,
@@ -118,8 +147,10 @@ async function fetchAccessToken(
         res.on("data", (chunk) => (data += chunk));
         res.on("end", () => {
           if (res.statusCode && res.statusCode >= 400) {
-            const sanitized = redactApiToken(data, pluginConfig.apiToken).slice(0, 200);
-            reject(new Error(`POST ${fullUrl} failed (${res.statusCode}): ${sanitized}`));
+            // Redact before parsing: the mapper reads the body, and a broker
+            // echo must never carry the skill token into an agent-visible error.
+            const sanitized = redactApiToken(data, pluginConfig.apiToken);
+            reject(new Error(mapBrokerError(res.statusCode, sanitized)));
             return;
           }
           try {
@@ -154,25 +185,18 @@ async function fetchAccessToken(
   });
 }
 
-/** Redact the bearer header value if it ever echoes back in an error body. */
+/**
+ * Redact the bearer header value if it ever echoes back in an error body.
+ */
 function redactApiToken(text: string, apiToken: string): string {
   if (!apiToken) return text;
   return text.split(apiToken).join("[REDACTED_API_TOKEN]");
 }
 
-// ---------------------------------------------------------------------------
-// Public — resolve a Bearer access token for a specific end user
-// ---------------------------------------------------------------------------
-
 /**
- * Resolve the current Bearer access token for `(organizationId, channel, userId)`.
- *
- * - Hits the in-memory cache first.
- * - Falls back to a fresh fetch from NestJS when the cache entry is stale,
- *   missing, or invalidated by a `tokenVersion` bump.
- * - Sanity-clamps `expiresAt` against absurd upstream values.
- * - Throws when the plugin isn't configured or the user has no Google
- *   connection on the backend (NestJS returns 4xx).
+ * Resolve the Bearer token for `(organizationId, channel, userId)`: cache
+ * first, else a fresh fetch when stale or `tokenVersion`-invalidated.
+ * Clamps absurd `expiresAt` values; throws when unconfigured or unconnected.
  */
 export async function getAccessTokenForUser(
   api: OpenClawPluginApi,
@@ -226,10 +250,9 @@ export async function getAccessTokenForUser(
 }
 
 /**
- * Lightweight startup status log. Confirms the plugin can READ its config
- * (apiToken + apiBaseUrl) and that `OPENCLAW_ORGANIZATION_ID` is set. Does
- * not perform an HTTP probe — backend health is verified lazily on the
- * first real `nabu_google` call. Logs only — never throws.
+ * Startup status log: confirms config is readable and the org env is set.
+ * No HTTP probe — backend health is verified lazily on the first real call.
+ * Logs only; never throws.
  */
 export function logBackendStatus(api: OpenClawPluginApi): void {
   const organizationId = process.env.OPENCLAW_ORGANIZATION_ID;
