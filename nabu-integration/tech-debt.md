@@ -96,6 +96,14 @@ model choice stands. Closing it later means metering from the `llm_output`
 payload we already send (provider-agnostic token counts, no cost) rather than
 changing the model. Backend notified: memo `223c5bc49ecf`.
 
+### F-6 — one error-envelope parser per plugin (fold into F-4)
+
+`describeBackendError` now lives in nabu-1password only. When the
+nabu-google-workspace mapper lands (B4) it will be a second copy — the same
+shape as F-4's four `resolveApiTokenInput` copies. Extensions may not import
+each other, so consolidation needs SDK surface; do it once, with F-4, rather
+than growing copies.
+
 ### C-5 — usage-ingest has never resolved its backend host (2026-08-11)
 
 The seed points nabu-gateway at `http://nabu-gateway:6200`. That name only
