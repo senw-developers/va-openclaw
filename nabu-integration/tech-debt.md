@@ -17,6 +17,12 @@ a request resolves as. `payload.user` is likewise client-supplied
 - Trust model today: the bearer is held only by va-core-nest, which is itself
   the authority on user identity — acceptable while that holds, wrong the
   moment any other caller gets a token.
+- ⚠ **Raised 2026-08-11.** Until now this was latent for the backend's own
+  traffic, because `parseSessionOwner` did not recognise their
+  `api:<org>:<userId>:<ts>` key and returned null. It now does, so a bearer
+  holder can select any user by crafting that header. Live impact is still nil
+  — the backend drops `x-user-id` (C-3) — but the two land together: **their
+  ownership column must not ship before this header is bound or refused.**
 - Fix (needs a backend contract decision, tracked with B6-1 scheduling):
   operator-JWT with allowed-userIds issued by va-core-nest + HMAC-bind over
   `(organizationId, userId, sessionKey)`, or refuse the header on
@@ -72,20 +78,20 @@ fail-closed at S6, but the config-interpolation path (cf-aig-metadata header)
 still fails open. Close with a doctor/startup check that the literal
 placeholder never reaches an outbound header.
 
-### D-SEC-3 — credit latch does not gate gateway ingress (confirmed 2026-08-10)
+### D-SEC-3 — credit latch did not gate gateway ingress (OUR SIDE FIXED 2026-08-11)
 
 `nabu-gateway` implements the credit/suspension latch as a `before_agent_reply`
-hook. That hook has three call sites: two on the runner path gated to
-`trigger === "cron"`, and one in the auto-reply resolver (channels/DM). Gateway
-ingress — HTTP `/v1/responses`, `/v1/chat/completions`, WS `chat.send`, node
-events — reaches the runners directly with `trigger: "user"` hardcoded
+hook. Two of its three call sites were gated to `trigger === "cron"`, while
+gateway ingress — HTTP `/v1/responses`, `/v1/chat/completions`, WS `chat.send`,
+node events — reaches the runners with `trigger: "user"` hardcoded
 (`src/agents/command/attempt-execution.ts:607`, `:692`), so the latch never
-fires. A suspended organization can still spend through the API path; what
-actually stops it today is the backend stopping the container, and if that stop
-fails the org is marked suspended while still serving. Options and blast radius
-are recorded in memo `bbf338e6012b`; the fix is a core behavior change (every
-plugin registering the hook would begin seeing user turns) and needs a
-maintainer decision, not a drive-by.
+fired and a suspended organization could still spend through the API path.
+**Both gates are removed (`c28c705e00`, `cb04e61645`), so the hook now fires on
+every trigger.** This is inert until the backend flips `nabuEnabled`: the flag
+defaults to enabled and the only other bundled consumer (memory-core)
+self-guards. Blast radius recorded in memo `bbf338e6012b`. Remaining risk is
+theirs — enforcement is off by their maintainer's decision, so nothing closes
+the gate today regardless.
 
 ### R-5 — metering is zero by decision (2026-08-10)
 
@@ -96,13 +102,15 @@ model choice stands. Closing it later means metering from the `llm_output`
 payload we already send (provider-agnostic token counts, no cost) rather than
 changing the model. Backend notified: memo `223c5bc49ecf`.
 
-### F-6 — one error-envelope parser per plugin (fold into F-4)
+### F-6 — one error-envelope parser per plugin (RESOLVED: accept the duplication)
 
-`describeBackendError` now lives in nabu-1password only. When the
-nabu-google-workspace mapper lands (B4) it will be a second copy — the same
-shape as F-4's four `resolveApiTokenInput` copies. Extensions may not import
-each other, so consolidation needs SDK surface; do it once, with F-4, rather
-than growing copies.
+`describeBackendError` is now copied in nabu-1password and nabu-google-workspace
+(B4 landed the second copy). It stays that way by operator decision
+(2026-08-11): consolidating would need a new Plugin-SDK subpath, and fork-only
+duplication costs nothing at upstream-merge time while new core/SDK surface is
+paid for at every merge. Unlike F-4 there is no existing core seam to reuse, so
+there is nothing to migrate onto. Keep the two copies in sync by hand; if a
+third plugin ever needs it, re-open rather than growing a fourth.
 
 ### C-5 — usage-ingest has never resolved its backend host (2026-08-11)
 
@@ -117,9 +125,19 @@ no push path for nabu-files or nabu-gateway `apiBaseUrl` at all, so three
 plugins are only reconfigurable via `config.patch`. Settle on the host with
 `docker exec nabu-<N>-gateway getent hosts nabu-gateway` (expect exit 2).
 Proposed fix: one public HTTPS base for all five plugins, which needs https
-transport in nabu-gateway/nabu-email and removal of the http-only guards.
-⚠ If the live `NABU_PUBLIC_API_URL` is https, nabu-1password and
-nabu-google-workspace are dead today too — both hard-reject non-`http:`.
+transport in nabu-gateway/nabu-email and removal of the http-only guards —
+**shipped our side in `ad7da54a8f`; both http-only guards are gone.**
+
+**Backend answered 2026-08-11 (memo `edb853d9371a`):**
+
+- **Staging `NABU_PUBLIC_API_URL` is `100.91.98.113` with no scheme**, so
+  `new URL()` throws and nabu-1password + nabu-google-workspace are dead on
+  staging before any request is made. Their config fix, not ours.
+- **Production is `http://100.80.107.181:6001`** — valid, and correct for the
+  four skill routes on `app:6001`.
+- ⚠ **Usage-ingest is still unfixed:** it lives on port **6200**, not 6001, so
+  the production value does not cover it. Parked rather than chased, because
+  metering is zero by decision (R-5).
 
 ## Backend-gated contract gaps (verified in va-core-nest 2026-08-10)
 
@@ -135,7 +153,9 @@ pre-port `2026.4.9` line, whose last commit `fb68518953` sends raw tool params
 only. So this is strictly a rebuild gate. Two asks recorded with the backend:
 their DTO field must be **optional-on-arrival** treating a missing `agentId` as
 `main` (enforcing a required field while April images are live would convert
-the gate into a live outage), and our own `OPENCLAW_ORGANIZATION_ID`
+the gate into a live outage) — **the backend agreed to this on 2026-08-11
+(memo `edb853d9371a`), so the ordering hazard is closed** — and our own
+`OPENCLAW_ORGANIZATION_ID`
 fail-closed throw (`nabu-email/index.ts:56-59`, same commit) must be verified
 present in every tenant `.env` before rebuild — it is an independent break
 vector that would be misdiagnosed as this one.
@@ -167,7 +187,12 @@ isolation is currently held only by our client-side idempotency-key convention.
 Ownership must be recorded on write and enforced on resolve before S6a is
 enabled in prod.
 
-### C-4 — 1Password: route missing and no per-user model
+### C-4 — 1Password: route missing and no per-user model (CLOSED 2026-08-11)
+
+**Our side shipped in `ad7da54a8f`:** `ACCESS_TOKEN_PATH` is now
+`/api/v1/onepassword/token`, the `{userId, channel}` body is gone, and both
+error branches read org-centric. Nothing further is owed on this item; the
+paragraphs below are kept as the decision record.
 
 **RESOLVED 2026-08-11 (operator): 1Password stays ORGANIZATION-SCOPED.** No
 per-user vaults, no per-user `ops_` tokens, no new backend model. Our plugin is
@@ -206,15 +231,20 @@ NET*RAW/NET_ADMIN + `no-new-privileges` — seam D11 retired) and the
 surfaces (per-signal OTLP endpoint overrides, host-gateway extra_hosts) are
 deliberate omissions until a tenant needs them.
 
-### F-4 — skill-token resolver duplicated ×4; platform seam exists
+### F-4 — skill-token resolver duplicated ×4 (RESOLVED 2026-08-11)
 
-`resolveApiTokenInput` is byte-identical in nabu-files, nabu-1password,
-nabu-google-workspace, and nabu-email (env-source only; file/exec refs
-degrade to ""). Core already offers the native seam: declare
-`configContracts.secretInputs` paths in the manifests and core resolves refs
-centrally (`src/secrets/runtime-config-collectors-plugins.ts`) with
-config.patch refresh — the local copies then delete. Migrate all four in one
-change with its own gates; do not patch copies individually.
+All four plugins now declare `configContracts.secretInputs.paths: ["apiToken"]`
+in their manifests, and the four byte-identical `resolveApiTokenInput` copies
+are deleted. Core resolves the SecretRef and writes the plaintext back into the
+plugin config before runtime reads it
+(`src/secrets/runtime-config-collectors-plugins.ts:70-80`, assignment at
+`:171-197`), and resolution re-runs on startup, on `config.patch`
+(`src/gateway/server-methods/config.ts:363` — the patch writes the resolved
+config forward at `:441`), and on reload
+(`src/gateway/server-reload-handlers.ts:720`), so token rotation is unaffected.
+Each call site keeps a `typeof === "string"` narrowing so a disabled plugin —
+whose refs are deliberately left unresolved — fails closed instead of sending
+`[object Object]`.
 
 ### F-5 — seed lacks explicit `plugins.bundledDiscovery` (RESOLVED: won't add)
 
