@@ -91,21 +91,45 @@ constant without new SDK surface (cross-plugin imports are forbidden), and the
 late cache write warms the next resolve rather than corrupting state. Revisit
 only if abandoned-upload volume shows up in backend metrics.
 
-### R-3 — org env fail-open at config layer (kept, monitored)
+### R-3 — org env fail-open at config layer (FIXED 2026-08-11)
 
 `${OPENCLAW_ORGANIZATION_ID}` substitution warns-and-re-emits the placeholder
-when unset (`src/config/io.ts` onMissing); plugin readers are being unified
-fail-closed at S6, but the config-interpolation path (cf-aig-metadata header)
-still fails open. Close with a doctor/startup check that the literal
-placeholder never reaches an outbound header.
+when unset (`src/config/io.ts` onMissing), so the cf-aig-metadata provider
+header would ship the literal `${…}` string to Cloudflare if the env var is
+missing.
 
-Verified 2026-08-11 by running `openclaw doctor --deep` and `--lint --json`:
-22 checks run, 0 skipped, 50 findings — and **zero** of them mention
-organization id, placeholder or interpolation. No such check exists today, so
-this entry is "write the check", not "run the tool". The same run confirmed the
-degraded-token behavior we want elsewhere: a missing skill token surfaces as
-`nabu_email is allowed but unavailable: config: …apiToken` and nothing else
-breaks (see F-4).
+Closed with a plugin-owned doctor check —
+`extensions/nabu-gateway/src/doctor/org-header-placeholder-check.ts`, registered
+in nabu-gateway's `register()`. It walks `models.providers.*.headers.*` and
+`*.request.headers.*` for values that reference an env var absent or empty in
+the process env, and emits an `error` finding naming the path and the var.
+Chosen as a plugin health check via `openclaw/plugin-sdk/health` (the same seam
+the policy plugin uses) rather than a core doctor check — zero upstream conflict
+surface. Proven against the real seed: org id unset → one error on
+`models.providers.cloudflare-ai-gateway.headers.cf-aig-metadata`; org id set →
+none. Registration is unit-tested because no plugin doctor checks run on the dev
+box to exercise it end-to-end.
+
+### Job 2 — upstream catch-up + `paired.json` → SQLite (MEASURED 2026-08-11)
+
+Added `upstream` remote (`openclaw/openclaw`, local `.git/config` only, not
+committed) and measured against our base `fc6400ede3` (2026-06-08):
+
+- **upstream/main is `8c567306ba0` (2026-08-11), ~20,283 commits ahead.** High
+  velocity — two months of calendar time, a very large merge.
+- **All 38 of our modified `src/`+`packages/` files have also changed upstream**,
+  most heavily: `attempt.ts` 144 upstream commits, `core-descriptors.ts` 108,
+  `server-methods.ts` 93, `chat.ts` 85, `attempt-execution.ts` 81. The conflict
+  set is effectively our entire core divergence. This is a scheduled project
+  with its own plan, not a stay-clean item; do it deliberately, re-apply each
+  fork hunk per area (the parity dossier's re-apply notes still hold).
+- ⭑ **`paired.json` → SQLite: DO NOT build our own.** Upstream already did it —
+  `src/infra/pairing-files.ts` is GONE upstream and
+  `refactor(pairing): store channel pairing state in SQLite (#105802)` +
+  `refactor(reef): centralize peer trust in SQLite (#108375)` are the exact
+  migration. Rolling our own now is throwaway work that would conflict with
+  theirs. Adopt upstream's version on catch-up. This retires the operator's
+  "move to SQLite" as our task — it is upstream's, already done.
 
 ### D-SEC-3 — credit latch did not gate gateway ingress (OUR SIDE FIXED 2026-08-11)
 

@@ -1,6 +1,7 @@
 import * as http from "node:http";
 import * as https from "node:https";
 import { definePluginEntry, type OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
+import { registerNabuGatewayDoctorChecks } from "./src/doctor/org-header-placeholder-check.js";
 
 /**
  * Mirrors plugins.entries.nabu-gateway.config.
@@ -136,6 +137,10 @@ export default definePluginEntry({
         "[nabu-gateway] OPENCLAW_ORGANIZATION_ID not set — usage events will be missing organizationId",
       );
     }
+
+    // Fails `openclaw doctor` if an unresolved ${VAR} sits on an outbound
+    // provider header — the R-3 fail-open where a missing org id ships literally.
+    registerNabuGatewayDoctorChecks();
 
     // Hook: before_agent_reply
     //
