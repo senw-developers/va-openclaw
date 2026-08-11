@@ -11,17 +11,17 @@ export interface Nabu1PasswordConfig {
 }
 
 /**
- * Request body POSTed to the access-token endpoint. userId is the trusted
- * requesterSenderId coerced to the backend's integer user id; channel is the
- * trusted gateway channel id. Org rides the x-organization-id header
- * (env-derived, one gateway stack per org — G1), not this body.
+ * Body POSTed to the token endpoint. 1Password is ORGANIZATION-scoped, so
+ * these are audit-only — authority is the skill token plus the env-derived
+ * `x-organization-id` header (G1). The backend ignores the body today; it is
+ * sent so adding an audit trail needs no plugin change.
  */
 export interface OpTokenRequest {
   userId: number;
   channel: string;
 }
 
-/** Response shape of POST /api/v1/onepassword/access-token. token starts with "ops_". */
+/** Response shape of the token endpoint. token starts with "ops_". */
 export interface OpTokenResponse {
   token: string;
 }

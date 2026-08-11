@@ -1,4 +1,5 @@
-import * as http from "http";
+import * as http from "node:http";
+import * as https from "node:https";
 import { definePluginEntry, type OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
 import { coerceSecretRef } from "openclaw/plugin-sdk/secret-ref-runtime";
 import { Type } from "typebox";
@@ -41,36 +42,49 @@ function resolveApiTokenInput(value: unknown): string {
   return "";
 }
 
+/**
+ * Composed tenancy (G1): the backend scopes routing per org, so the header is
+ * always sent. Absent env degrades to an empty header rather than throwing —
+ * a call-time throw would take email down on any tenant provisioned without
+ * the var, which is a deploy defect, not a request-level one.
+ */
+function resolveOrganizationId(api: OpenClawPluginApi): string {
+  const organizationId = process.env.OPENCLAW_ORGANIZATION_ID?.trim();
+  if (!organizationId) {
+    api.logger.warn("nabu-email: OPENCLAW_ORGANIZATION_ID not set; sends are unscoped");
+    return "";
+  }
+  return organizationId;
+}
+
 // ---------------------------------------------------------------------------
-// Internal helper — POST to the NestJS SMTP API over the Docker network.
+// Internal helper — POST to the NestJS SMTP API.
+// Node http/https rather than fetch: OpenClaw's global undici proxy dispatcher
+// breaks plugin outbound TLS.
 // ---------------------------------------------------------------------------
 async function apiPost(
+  api: OpenClawPluginApi,
   pluginConfig: NabuEmailConfig,
   path: string,
   body: unknown,
 ): Promise<string> {
   const baseUrl = pluginConfig.apiBaseUrl ?? "http://app:6001";
   const url = new URL(`/api/v1/smtp/${path}`, baseUrl);
-  // Composed tenancy (G1): the backend scopes agentId->user mailbox routing
-  // per org (B6-3). Fail-closed so sends never route against the wrong tenant.
-  const organizationId = process.env.OPENCLAW_ORGANIZATION_ID;
-  if (!organizationId) {
-    throw new Error("nabu-email: OPENCLAW_ORGANIZATION_ID not set");
-  }
+  const transport = url.protocol === "https:" ? https : http;
 
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
-    const req = http.request(
+    const req = transport.request(
       {
         hostname: url.hostname,
-        port: Number(url.port) || 80,
+        port: url.port || (url.protocol === "https:" ? 443 : 80),
         path: url.pathname,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Content-Length": Buffer.byteLength(payload),
           "x-skill-token": pluginConfig.apiToken,
-          "x-organization-id": organizationId,
+          "x-organization-id": resolveOrganizationId(api),
         },
       },
       (res) => {
@@ -138,7 +152,7 @@ export default definePluginEntry({
             return { content: [{ type: "text", text: msg }], details: { error: msg } };
           }
           const cfg = getLivePluginConfig(api);
-          const raw = await apiPost(cfg, "send", { ...(params as object), agentId });
+          const raw = await apiPost(api, cfg, "send", { ...(params as object), agentId });
           return { content: [{ type: "text", text: raw }], details: parseJsonSafe(raw) };
         },
       }),
@@ -174,7 +188,7 @@ export default definePluginEntry({
             return { content: [{ type: "text", text: msg }], details: { error: msg } };
           }
           const cfg = getLivePluginConfig(api);
-          const raw = await apiPost(cfg, "fetch", { ...(params as object), agentId });
+          const raw = await apiPost(api, cfg, "fetch", { ...(params as object), agentId });
           return { content: [{ type: "text", text: raw }], details: parseJsonSafe(raw) };
         },
       }),

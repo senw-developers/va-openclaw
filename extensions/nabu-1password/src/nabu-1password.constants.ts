@@ -1,8 +1,12 @@
 /** Default NestJS backend base URL inside the tenant's Docker network. */
 export const DEFAULT_API_BASE_URL = "http://app:6001";
 
-/** NestJS endpoint that vends a decrypted per-user 1Password service-account token. */
-export const ACCESS_TOKEN_PATH = "/api/v1/onepassword/access-token";
+/**
+ * Backend endpoint that vends the organization's 1Password service-account
+ * token. Org-scoped by decision (2026-08-11) — identity comes from the
+ * skill token plus `x-organization-id`, not the request body.
+ */
+export const ACCESS_TOKEN_PATH = "/api/v1/onepassword/token";
 
 /** Timeout for the access-token broker call to NestJS. */
 export const NESTJS_FETCH_TIMEOUT_MS = 10 * 1000;

@@ -6,12 +6,35 @@ describe("mapBrokerError", () => {
     expect(mapBrokerError(401, "{}")).toMatch(/plugin credential/i);
   });
 
-  it("maps 404 to a per-user message", () => {
-    expect(mapBrokerError(404, "{}")).toMatch(/per-user/i);
+  it("maps 404 to an organization-scoped not-configured message", () => {
+    const message = mapBrokerError(404, "{}");
+    expect(message).toMatch(/not configured for this organization/i);
+    expect(message).not.toMatch(/per-user|this user/i);
   });
 
-  it("maps 412 to a connect-1Password prompt", () => {
-    expect(mapBrokerError(412, "{}")).toMatch(/connect.*1password/i);
+  it("maps 403 to a not-granted message distinct from not-configured", () => {
+    const message = mapBrokerError(403, "{}");
+    expect(message).toMatch(/not been granted access/i);
+    expect(message).not.toMatch(/not configured/i);
+  });
+
+  it("maps 410 to a reconnect prompt", () => {
+    expect(mapBrokerError(410, "{}")).toMatch(/revoked/i);
+  });
+
+  it("surfaces the backend envelope fields", () => {
+    expect(mapBrokerError(410, '{"error":"Re-consent required","reason":"invalid_grant"}')).toMatch(
+      /Re-consent required: invalid_grant/,
+    );
+    expect(mapBrokerError(502, '{"error":"Upstream failed","detail":"timeout"}')).toMatch(
+      /Upstream failed: timeout/,
+    );
+  });
+
+  it("tolerates a non-JSON body", () => {
+    expect(mapBrokerError(500, "<html>gateway timeout</html>")).toMatch(
+      /1Password broker failed \(500\)\.$/,
+    );
   });
 
   it("includes the error code on other statuses", () => {

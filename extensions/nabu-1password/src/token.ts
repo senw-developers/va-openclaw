@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import * as http from "node:http";
+import * as https from "node:https";
 import type { OpenClawPluginApi } from "../api.js";
 import { getLivePluginConfig, hasApiToken } from "./config.js";
 import {
@@ -25,28 +26,49 @@ export function redactSkillToken(text: string, apiToken: string): string {
   return text.split(apiToken).join(REDACTED_SKILL_TOKEN);
 }
 
-/** Map a non-2xx broker response to a clear, agent-actionable error message. */
+/**
+ * Map a non-2xx broker response to a clear, agent-actionable message.
+ * 1Password is organization-scoped, so every state is about the ORG, never
+ * about the individual requester — 403 is the one caller-specific case.
+ */
 export function mapBrokerError(status: number, body: string): string {
+  const detail = describeBackendError(body);
+  const suffix = detail ? ` (${detail})` : "";
   if (status === 401) {
     return "1Password broker rejected the plugin credential (check NABU_ONE_PASSWORD_SKILL_TOKEN).";
   }
+  if (status === 403) {
+    return `1Password is configured for this organization, but you have not been granted access — ask an organization admin to grant it.${suffix}`;
+  }
   if (status === 404) {
-    return "No Nabu user matches this requester; 1Password access is per-user.";
+    return `1Password is not configured for this organization — an admin can connect it in the dashboard.${suffix}`;
   }
-  if (status === 412) {
-    return "This user hasn't connected 1Password — ask them to connect it in the Simon Says dashboard.";
+  if (status === 410) {
+    return `The organization's 1Password connection was revoked and must be reconnected in the dashboard.${suffix}`;
   }
-  const code = extractCode(body);
-  return `1Password broker failed (${status})${code ? ` [${code}]` : ""}.`;
+  return `1Password broker failed (${status})${suffix}.`;
 }
 
-function extractCode(body: string): string | null {
+/**
+ * Read the backend's error envelope. It emits `{error, reason?, detail?}`;
+ * `{code, message}` is tolerated so a future envelope change is not a
+ * regression. Returns null when the body is not JSON or carries nothing useful.
+ */
+function describeBackendError(body: string): string | null {
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(body) as { code?: unknown };
-    return typeof parsed.code === "string" ? parsed.code : null;
+    parsed = JSON.parse(body);
   } catch {
     return null;
   }
+  if (typeof parsed !== "object" || parsed === null) {
+    return null;
+  }
+  const envelope = parsed as Record<string, unknown>;
+  const parts = ["code", "error", "message", "reason", "detail"]
+    .map((key) => envelope[key])
+    .filter((value): value is string => typeof value === "string" && value.length > 0);
+  return parts.length > 0 ? [...new Set(parts)].join(": ") : null;
 }
 
 /** Assert the broker returned a 1Password service-account token. */
@@ -72,11 +94,12 @@ export async function fetchUserOpToken(
   }
   const baseUrl = cfg.apiBaseUrl ?? DEFAULT_API_BASE_URL;
   const url = new URL(ACCESS_TOKEN_PATH, baseUrl);
-  if (url.protocol !== "http:") {
-    throw new Error(`apiBaseUrl must be http (docker-internal); got ${url.protocol}`);
-  }
-  // Composed tenancy (G1): broker route is scoped (org, userId, channel) —
-  // fail-closed so tokens are never vended against the wrong tenant (B7).
+  // Both schemes are supported: the base may be a docker-internal host, an
+  // overlay hostname, or a public HTTPS endpoint. The auth factor is the skill
+  // token, not the transport.
+  const transport = url.protocol === "https:" ? https : http;
+  // Composed tenancy (G1): the broker route is org-scoped — fail-closed so
+  // tokens are never vended against the wrong tenant (B7).
   const organizationId = process.env.OPENCLAW_ORGANIZATION_ID;
   if (!organizationId) {
     throw new Error(
@@ -86,10 +109,10 @@ export async function fetchUserOpToken(
   const payload = JSON.stringify(request);
 
   const token = await new Promise<string>((resolve, reject) => {
-    const req = http.request(
+    const req = transport.request(
       {
         hostname: url.hostname,
-        port: Number(url.port) || 80,
+        port: url.port || (url.protocol === "https:" ? 443 : 80),
         path: url.pathname,
         method: "POST",
         headers: {

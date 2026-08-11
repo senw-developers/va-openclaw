@@ -1,4 +1,5 @@
-import * as http from "http";
+import * as http from "node:http";
+import * as https from "node:https";
 import { definePluginEntry, type OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
 
 // ---------------------------------------------------------------------------
@@ -75,28 +76,32 @@ function isNabuEnabled(api: OpenClawPluginApi): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Fire-and-forget POST to NestJS over Docker network.
+// Fire-and-forget POST to the backend.
 //
-// Uses Node http (not fetch) for zero-dependency compat, matching
-// the nabu-email plugin pattern. Response is drained but not awaited
-// so the hook never blocks the agent loop.
+// Node http/https rather than fetch: OpenClaw installs a global undici proxy
+// dispatcher that breaks plugin outbound TLS. Response is drained but not
+// awaited so the hook never blocks the agent loop.
+//
+// ⚠ Contract obligation, not an implementation detail: this lane must NEVER
+// retry. The backend keys nothing on runId and its accumulators are
+// unconditional, so a retry double-bills the tenant.
 // ---------------------------------------------------------------------------
 function postUsageEvent(cfg: NabuGatewayConfig, body: Record<string, unknown>): void {
   const url = new URL("/api/v1/nabu/usage/ingest", cfg.apiBaseUrl);
   const payload = JSON.stringify(body);
+  const transport = url.protocol === "https:" ? https : http;
 
-  const req = http.request(
+  const req = transport.request(
     {
       hostname: url.hostname,
-      port: Number(url.port) || 80,
+      port: url.port || (url.protocol === "https:" ? 443 : 80),
       path: url.pathname,
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(payload),
-        // Channel auth — same platform skill token as nabu-email. senw-core's
-        // NabuSkillTokenGuard constant-time-compares sha256(token) against
-        // NABU_SKILL_TOKEN_HASH. Without it every ingest 401s.
+        // Sent ahead of a backend guard so the guard can ship without a
+        // lockstep release; the route is unauthenticated today.
         "x-skill-token": cfg.apiToken,
       },
       timeout: 5_000,

@@ -1,5 +1,6 @@
-import * as http from "node:http";
 import { createHash } from "node:crypto";
+import * as http from "node:http";
+import * as https from "node:https";
 import type { OpenClawPluginApi } from "../api.js";
 import { getLivePluginConfig, hasApiToken } from "./config.js";
 import {
@@ -92,17 +93,17 @@ async function fetchAccessToken(
 ): Promise<NabuGoogleAccessTokenResponse> {
   const baseUrl = pluginConfig.apiBaseUrl ?? DEFAULT_API_BASE_URL;
   const url = new URL(ACCESS_TOKEN_CALLBACK_PATH, baseUrl);
-  if (url.protocol !== "http:") {
-    throw new Error(`apiBaseUrl must be http (docker-internal); got ${url.protocol}`);
-  }
+  // Both schemes supported: the base may be docker-internal, an overlay
+  // hostname, or a public HTTPS endpoint. The auth factor is the skill token.
+  const transport = url.protocol === "https:" ? https : http;
   const payload = JSON.stringify(request);
   const fullUrl = url.href;
 
   return new Promise((resolve, reject) => {
-    const req = http.request(
+    const req = transport.request(
       {
         hostname: url.hostname,
-        port: Number(url.port) || 80,
+        port: url.port || (url.protocol === "https:" ? 443 : 80),
         path: url.pathname,
         method: "POST",
         headers: {

@@ -187,9 +187,28 @@
     "ownerDisplay": "raw"
   },
   "session": {
-    "dmScope": "per-channel-peer"
+    "dmScope": "per-account-channel-peer"
   },
-  "channels": {},
+  "channels": {
+    "whatsapp": {
+      "enabled": false,
+      "dmPolicy": "disabled",
+      "allowFrom": [],
+      "groupPolicy": "disabled",
+      "groupAllowFrom": [],
+      "accounts": {}
+    },
+    "telegram": {
+      "enabled": false,
+      "dmPolicy": "disabled",
+      "allowFrom": [],
+      "groupPolicy": "disabled",
+      "groupAllowFrom": [],
+      "streaming": { "mode": "off" },
+      "network": { "autoSelectFamily": false },
+      "accounts": {}
+    }
+  },
   "gateway": {
     "port": 18789,
     "mode": "local",
