@@ -16,15 +16,15 @@ export const API_RELAY_PREFIX = "api";
 
 /**
  * Owning userId for an api-relay key's segments, or null when the shape does not
- * match. Fail-closed on a non-numeric id: only `app_users.id` is a real owner,
- * and the key is client-supplied (D-SEC-1).
+ * match. Requires a POSITIVE id: `app_users.id` starts at 1, and the backend mints
+ * `<userId ?? 0>`, so 0 is its "no user" sentinel and must never own anything.
  */
 export function parseApiRelayUserId(restParts: string[]): string | null {
   if (restParts.length < 4) {
     return null;
   }
   const userId = restParts[2]?.trim();
-  return userId && /^\d+$/.test(userId) ? userId : null;
+  return userId && /^[1-9]\d*$/.test(userId) ? userId : null;
 }
 
 /**

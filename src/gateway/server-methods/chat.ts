@@ -2492,7 +2492,10 @@ async function handleChatHistoryRequest({
           ),
         )
       : undefined;
-  const owner = parseSessionOwner(sessionKey);
+  // Owner must come from the agent-scoped canonical key, not the raw request key:
+  // a legacy/alias key is only rescoped downstream, so parseSessionOwner would
+  // return null here. Matches sessions-history-http.ts.
+  const owner = parseSessionOwner(canonicalKey);
   const enrichedMessages = await enrichMessagesWithFileRefs(recencyFilteredMessages, {
     requestId: `chat.history:${sessionKey}`,
     ...(userAttachments ? { userAttachments } : {}),

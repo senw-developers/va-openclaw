@@ -84,7 +84,10 @@ function describeBackendError(body: string): string | null {
   const parts = ["code", "error", "message", "reason", "detail"]
     .map((key) => envelope[key])
     .filter((value): value is string => typeof value === "string" && value.length > 0);
-  return parts.length > 0 ? [...new Set(parts)].join(": ") : null;
+  // Cap each field, not the joined string: the body is backend-controlled and this
+  // reaches an agent-visible error, but capping the join would drop later fields
+  // (e.g. `reason`) behind one long `error`.
+  return parts.length > 0 ? [...new Set(parts)].map((part) => part.slice(0, 100)).join(": ") : null;
 }
 
 /**

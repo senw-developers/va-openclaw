@@ -155,10 +155,12 @@ their DTO field must be **optional-on-arrival** treating a missing `agentId` as
 `main` (enforcing a required field while April images are live would convert
 the gate into a live outage) — **the backend agreed to this on 2026-08-11
 (memo `edb853d9371a`), so the ordering hazard is closed** — and our own
-`OPENCLAW_ORGANIZATION_ID`
-fail-closed throw (`nabu-email/index.ts:56-59`, same commit) must be verified
-present in every tenant `.env` before rebuild — it is an independent break
-vector that would be misdiagnosed as this one.
+`OPENCLAW_ORGANIZATION_ID` handling must be verified present in every tenant
+`.env` before rebuild. ⚠ Corrected 2026-08-11: the fail-closed throw described
+here was REMOVED in `ad7da54a8f` — nabu-email now warns once and sends an EMPTY
+org header, so a missing env var is fail-OPEN, not a break vector. That is
+tolerable only while the backend resolves org from the token hash alone; it
+becomes a real hole the moment they add the org conjunct to SMTP.
 
 `nabu_email_send` / `nabu_email_fetch` spread `agentId` into the request body;
 the backend's send/fetch DTOs have no such field and its global ValidationPipe
@@ -190,9 +192,11 @@ enabled in prod.
 ### C-4 — 1Password: route missing and no per-user model (CLOSED 2026-08-11)
 
 **Our side shipped in `ad7da54a8f`:** `ACCESS_TOKEN_PATH` is now
-`/api/v1/onepassword/token`, the `{userId, channel}` body is gone, and both
-error branches read org-centric. Nothing further is owed on this item; the
-paragraphs below are kept as the decision record.
+`/api/v1/onepassword/token` and both error branches read org-centric. The
+`{userId, channel}` body is still built and POSTed — demoted to audit-only, which
+is what the decision below permits; the backend route takes no `@Body()` and
+ignores it. Nothing further is owed on this item; the paragraphs below are kept
+as the decision record.
 
 **RESOLVED 2026-08-11 (operator): 1Password stays ORGANIZATION-SCOPED.** No
 per-user vaults, no per-user `ops_` tokens, no new backend model. Our plugin is
@@ -239,9 +243,15 @@ are deleted. Core resolves the SecretRef and writes the plaintext back into the
 plugin config before runtime reads it
 (`src/secrets/runtime-config-collectors-plugins.ts:70-80`, assignment at
 `:171-197`), and resolution re-runs on startup, on `config.patch`
-(`src/gateway/server-methods/config.ts:363` — the patch writes the resolved
-config forward at `:441`), and on reload
+(`ensureResolvableSecretRefsOrRespond` →
+`src/gateway/server-methods/config.ts:363`), and on reload
 (`src/gateway/server-reload-handlers.ts:720`), so token rotation is unaffected.
+⚠ Because that patch-time call _resolves_ refs, an unset or empty env var now
+makes `config.patch` fail with `INVALID_REQUEST` instead of degrading to a
+per-call 401 (`src/secrets/resolve.ts:402-408` throws). That is a live merge
+risk for `nabu-email`, the only nabu plugin the seed ships enabled — pending
+operator decision (accept + make the env var a provisioning precondition, or
+drop nabu-email from the migration).
 Each call site keeps a `typeof === "string"` narrowing so a disabled plugin —
 whose refs are deliberately left unresolved — fails closed instead of sending
 `[object Object]`.

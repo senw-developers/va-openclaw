@@ -199,6 +199,11 @@ describe("parseSessionOwner v2 — backend relay shape", () => {
     expect(parseSessionOwner("agent:main:api:12:admin:1699999999")).toBeNull();
   });
 
+  it("userId 0 fails closed — it is the backend's 'no user' sentinel, not an owner", () => {
+    expect(parseSessionOwner("agent:main:api:12:0:1699999999")).toBeNull();
+    expect(parseSessionOwner("agent:main:api:12:000:1699999999")).toBeNull();
+  });
+
   it("short key missing the timestamp fails closed", () => {
     expect(parseSessionOwner("agent:main:api:12:42")).toBeNull();
   });

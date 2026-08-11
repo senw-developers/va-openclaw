@@ -40,4 +40,16 @@ describe("mapBrokerError", () => {
   it("reads the files-api style code field too", () => {
     expect(mapBrokerError(500, '{"code":"BROKER_DOWN"}')).toMatch(/BROKER_DOWN/);
   });
+
+  it("caps backend-controlled detail so an unbounded body cannot reach the agent", () => {
+    const huge = JSON.stringify({ error: "x".repeat(5000) });
+    const message = mapBrokerError(502, huge);
+    expect(message.length).toBeLessThan(400);
+    expect(message).toContain("xxx");
+  });
+
+  it("still surfaces detail from an envelope longer than the old 200-char clamp", () => {
+    const body = JSON.stringify({ error: "pad".padEnd(250, "-"), reason: "invalid_grant" });
+    expect(mapBrokerError(410, body)).toContain("invalid_grant");
+  });
 });

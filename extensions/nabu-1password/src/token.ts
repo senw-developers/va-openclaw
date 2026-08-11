@@ -72,7 +72,10 @@ function describeBackendError(body: string): string | null {
   const parts = ["code", "error", "message", "reason", "detail"]
     .map((key) => envelope[key])
     .filter((value): value is string => typeof value === "string" && value.length > 0);
-  return parts.length > 0 ? [...new Set(parts)].join(": ") : null;
+  // Cap each field, not the joined string: the body is backend-controlled and this
+  // reaches an agent-visible error, but capping the join would drop later fields
+  // (e.g. `reason`) behind one long `error`.
+  return parts.length > 0 ? [...new Set(parts)].map((part) => part.slice(0, 100)).join(": ") : null;
 }
 
 /**
@@ -134,7 +137,10 @@ export async function fetchUserOpToken(
         res.on("end", () => {
           const status = res.statusCode ?? 0;
           if (status >= 400) {
-            const sanitized = redactSkillToken(data, cfg.apiToken).slice(0, 200);
+            // Not truncated here: mapBrokerError parses the envelope and caps its
+            // own output, and a pre-parse slice breaks JSON.parse on long bodies,
+            // silently dropping the detail suffix.
+            const sanitized = redactSkillToken(data, cfg.apiToken);
             reject(new Error(mapBrokerError(status, sanitized)));
             return;
           }
