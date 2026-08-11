@@ -25,8 +25,16 @@ describe("getLivePluginConfig apiToken resolution", () => {
     expect(hasApiToken(cfg)).toBe(true);
   });
 
-  it("does NOT resolve SecretRefs itself — core owns that, even with the env var set", () => {
-    process.env.NABU_ONE_PASSWORD_SKILL_TOKEN = "tok-from-env";
+  it("resolves an env SecretRef locally — core resolution is fatal, so we own it", () => {
+    process.env.NABU_ONE_PASSWORD_SKILL_TOKEN = " tok-from-env ";
+    const cfg = getLivePluginConfig(
+      apiWithConfig({ source: "env", provider: "default", id: "NABU_ONE_PASSWORD_SKILL_TOKEN" }),
+    );
+    expect(cfg.apiToken).toBe("tok-from-env");
+    expect(hasApiToken(cfg)).toBe(true);
+  });
+
+  it("degrades to an empty token when the env var is unset — never blocks config.patch", () => {
     const cfg = getLivePluginConfig(
       apiWithConfig({ source: "env", provider: "default", id: "NABU_ONE_PASSWORD_SKILL_TOKEN" }),
     );

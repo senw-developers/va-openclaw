@@ -10,16 +10,6 @@
     "tools": ["nabu_1password"]
   },
   "enabledByDefault": false,
-  "configContracts": {
-    "secretInputs": {
-      "paths": [
-        {
-          "path": "apiToken",
-          "expected": "string"
-        }
-      ]
-    }
-  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

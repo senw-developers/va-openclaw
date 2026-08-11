@@ -235,23 +235,30 @@ NET*RAW/NET_ADMIN + `no-new-privileges` — seam D11 retired) and the
 surfaces (per-signal OTLP endpoint overrides, host-gateway extra_hosts) are
 deliberate omissions until a tenant needs them.
 
-### F-4 — skill-token resolver duplicated ×4 (RESOLVED 2026-08-11)
+### F-4 — skill-token resolver duplicated ×4 (WON'T FIX: core seam is fail-fatal)
 
-All four plugins now declare `configContracts.secretInputs.paths: ["apiToken"]`
-in their manifests, and the four byte-identical `resolveApiTokenInput` copies
-are deleted. Core resolves the SecretRef and writes the plaintext back into the
-plugin config before runtime reads it
-(`src/secrets/runtime-config-collectors-plugins.ts:70-80`, assignment at
-`:171-197`), and resolution re-runs on startup, on `config.patch`
-(`ensureResolvableSecretRefsOrRespond` →
-`src/gateway/server-methods/config.ts:363`), and on reload
-(`src/gateway/server-reload-handlers.ts:720`), so token rotation is unaffected.
-⚠ Because that patch-time call _resolves_ refs, an unset or empty env var now
-makes `config.patch` fail with `INVALID_REQUEST` instead of degrading to a
-per-call 401 (`src/secrets/resolve.ts:402-408` throws). That is a live merge
-risk for `nabu-email`, the only nabu plugin the seed ships enabled — pending
-operator decision (accept + make the env var a provisioning precondition, or
-drop nabu-email from the migration).
+`resolveApiTokenInput` is byte-identical in nabu-files, nabu-1password,
+nabu-google-workspace and nabu-email, and it stays that way.
+
+We migrated all four onto core's native seam
+(`configContracts.secretInputs`, `src/secrets/runtime-config-collectors-plugins.ts`)
+and reverted it the same day. Core resolution is **fatal by contract**: an unset
+or empty env var makes `resolveEnvRefs` throw
+(`src/secrets/resolve.ts:402-408`), `ensureResolvableSecretRefsOrRespond`
+catches it, and `config.patch` is rejected with `INVALID_REQUEST`
+(`src/gateway/server-methods/config.ts:363-378`) — taking down the backend's only
+push channel because one plugin's token is missing.
+`PluginManifestSecretInputContracts` (`src/plugins/manifest.ts:288-296`) offers
+only `bundledDefaultEnabled` and `paths`; there is no optional/non-fatal mode to
+opt into.
+
+Operator decision 2026-08-11: **a missing skill token must disable only that
+plugin, never block config.patch.** Local resolution degrades to `""` → a
+per-call 401 on that plugin alone, which is the required behavior. Each copy
+carries a JSDoc saying why it is not declared as a core secretInput, so the
+migration is not attempted a third time. Adding an `optional` flag to the core
+contract would work but is new core surface for a fork-only problem — see the
+conflict-surface rule.
 Each call site keeps a `typeof === "string"` narrowing so a disabled plugin —
 whose refs are deliberately left unresolved — fails closed instead of sending
 `[object Object]`.

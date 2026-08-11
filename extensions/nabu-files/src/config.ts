@@ -1,3 +1,4 @@
+import { coerceSecretRef } from "openclaw/plugin-sdk/secret-ref-runtime";
 import type { OpenClawPluginApi } from "../api.js";
 import {
   DEFAULT_API_BASE_URL,
@@ -17,12 +18,7 @@ export function getLivePluginConfig(api: OpenClawPluginApi): NabuFilesConfig {
   const cfg = api.runtime.config.current();
   const entry = (cfg as any)?.plugins?.entries?.[PLUGIN_ID]?.config;
   return {
-    /**
-     * Core resolves the manifest's secretInputs SecretRef before runtime sees it,
-     * on startup and on every config.patch. A non-string means resolution did not
-     * run (plugin disabled), so fail closed rather than send "[object Object]".
-     */
-    apiToken: typeof entry?.apiToken === "string" ? entry.apiToken : "",
+    apiToken: resolveApiTokenInput(entry?.apiToken),
     apiBaseUrl: entry?.apiBaseUrl ?? DEFAULT_API_BASE_URL,
     requestTimeoutMs: entry?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
     maxRetries: entry?.maxRetries ?? DEFAULT_MAX_RETRIES,
@@ -32,4 +28,24 @@ export function getLivePluginConfig(api: OpenClawPluginApi): NabuFilesConfig {
 
 export function hasApiToken(config: NabuFilesConfig): boolean {
   return typeof config.apiToken === "string" && config.apiToken.length > 0;
+}
+
+/**
+ * Resolve a literal token or an env SecretRef {source, provider, id}. Kept local
+ * rather than declared as a core `secretInputs` path: core resolution is FATAL,
+ * so an unset env var would reject every config.patch instead of degrading to a
+ * per-call 401 on this plugin alone.
+ */
+function resolveApiTokenInput(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  const ref = coerceSecretRef(value);
+  if (!ref) {
+    return "";
+  }
+  if (ref.source === "env") {
+    return process.env[ref.id]?.trim() ?? "";
+  }
+  return "";
 }
