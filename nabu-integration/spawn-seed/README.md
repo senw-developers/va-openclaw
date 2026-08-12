@@ -56,7 +56,7 @@ What a standalone image can actually prove:
   2026-08-12: `doctor --lint` in a tenant container reports the same 22 checks
   and zero findings as before the check existed. Plugin-registered doctor checks
   have no registration seam (core hardcodes the `policy` plugin), and the
-  orchestrator never runs `doctor` at all. R-3 is REOPENED — see tech-debt.md.
+  orchestrator never runs `doctor` at all. R-3 is ACCEPTED/won't-fix for now — see tech-debt.md, and re-open it with R-5 when metering is switched on.
   What DOES surface a missing org id is the core config warning at boot, naming
   `models.providers.cloudflare-ai-gateway.headers.cf-aig-metadata`, plus
   nabu-gateway's own log line. Both warn and proceed.

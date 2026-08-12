@@ -91,7 +91,7 @@ constant without new SDK surface (cross-plugin imports are forbidden), and the
 late cache write warms the next resolve rather than corrupting state. Revisit
 only if abandoned-upload volume shows up in backend metrics.
 
-### R-3 — org env fail-open at config layer (⚠ REOPENED 2026-08-12)
+### R-3 — org env fail-open at config layer (ACCEPTED, won't fix for now — 2026-08-12)
 
 `${OPENCLAW_ORGANIZATION_ID}` substitution warns-and-re-emits the placeholder
 when unset (`src/config/io.ts` onMissing), so the cf-aig-metadata provider
@@ -135,13 +135,24 @@ models.providers.cloudflare-ai-gateway.headers.cf-aig-metadata`), and
 nabu-gateway logs its own warning at boot. The real gap is that it **warns and
 proceeds** — fail-open.
 
-**Shape the replacement must take:** the only signal the orchestrator observes
-is container health, so a missing org id has to fail the healthcheck or refuse
-startup. That is a fail-closed change with real blast radius — a tenant
-provisioned without the var would never come up — so it needs an explicit
-operator decision before implementation. Pending that decision the shipped check
-stays in place: it is inert, costs nothing at runtime, and adds no upstream
-conflict surface.
+**Operator decision 2026-08-12: ACCEPT. Not part of the core task.**
+Rationale: the orchestrator _sets_ this variable during provisioning (it is in
+both `docker/{staging,production}/.env.template`), so a missing value means
+provisioning already failed upstream of us. Today's blast radius is metering
+attribution only — and metering is zero by decision (R-5), with the model chain
+not even routing through Cloudflare. Failing tenants closed to protect a
+switched-off feature inverts the risk: it trades a real outage for a
+hypothetical mis-attribution.
+
+⚠ **Re-open together with R-5.** The moment metering is switched on, the correct
+fix is to fail the container healthcheck when the org id is missing — that is the
+only signal the orchestrator observes (`va-nabu-orchestrator-nest`
+`src/utils/helpers.ts:519`). Do not ship metering without closing this.
+
+The shipped doctor check stays in the tree, annotated INERT at the call site: it
+costs nothing at runtime, adds no upstream conflict surface, and
+`findUnresolvedHeaderPlaceholders` is correct and tested, so it is directly
+reusable by the healthcheck implementation.
 
 ### Job 2 — upstream catch-up + `paired.json` → SQLite (MEASURED 2026-08-11)
 
@@ -197,6 +208,10 @@ rename the seed env var to `CLOUDFLARE_API_KEY` or give the provider an explicit
 SecretRef `keyRef`.
 
 ### R-5 — metering is zero by decision (2026-08-10)
+
+⚠ **Prerequisite when closing this: R-3.** Switching metering on makes the
+unresolved `${OPENCLAW_ORGANIZATION_ID}` placeholder a live mis-attribution
+rather than a dormant warning. Close R-3 (healthcheck failure) in the same change.
 
 Backend metering is Cloudflare-AI-Gateway-log-only, and the seed's primary
 (`openai/gpt-5.5`) plus fallback (`minimax`) both bypass Cloudflare, so no log
