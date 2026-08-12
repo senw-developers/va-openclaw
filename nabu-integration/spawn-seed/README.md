@@ -33,21 +33,19 @@ each copy to the orchestrator.
 
 ## Standalone local testing (no backend attached)
 
-The seed's model chain is `openai/gpt-5.5` → `minimax/MiniMax-M2.7`, and the
-`openai:default` auth profile is **oauth** — a throwaway test instance has no
-oauth material, so drive tests off minimax instead. Everything minimax needs is
-already in the seed (provider, `MiniMax-M2.7`, the `minimax:global` api_key
-profile, and the compose env passthrough); `MINIMAX_API_KEY` is resolved
-straight from the environment, so no `openclaw auth` step is required.
-
-**⚠ Do not commit the primary-model flip into this seed.** `openai` primary is
-operator decision G7 and ships to every tenant. Change it on the _instance_
-config only:
+The seed's primary is `minimax/MiniMax-M2.7`, matching production, so a test
+instance is a **verbatim copy of this seed with no local edits**. `MINIMAX_API_KEY`
+resolves straight from the environment, so no `openclaw auth` step is required.
+(The `openai/gpt-5.5` chain from G7 is deferred: its auth profile is oauth and no
+tenant has the material. The profile and model entry stay as groundwork.)
 
 ```sh
-# 1. In the instance .env: MINIMAX_API_KEY=…  OPENCLAW_GATEWAY_TOKEN=…
-# 2. After docker-setup.sh creates the instance config dir:
-openclaw config set agents.defaults.model.primary minimax/MiniMax-M2.7
+# 1. In the instance .env: MINIMAX_API_KEY=…
+#    Leave OPENCLAW_GATEWAY_TOKEN empty ONLY if the orchestrator will mint it;
+#    for a manual standalone test set it yourself — docker-setup.sh's
+#    "reuse existing config token" path will otherwise adopt the seed's literal
+#    ${OPENCLAW_GATEWAY_TOKEN} placeholder as if it were a real token.
+# 2. cd into the instance dir and run ./docker-setup.sh
 ```
 
 What a standalone image can actually prove:
