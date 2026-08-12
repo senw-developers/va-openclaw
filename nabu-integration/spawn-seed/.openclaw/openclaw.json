@@ -247,25 +247,7 @@
     }
   },
   "plugins": {
-    "allow": [
-      "nabu-email",
-      "nabu-gateway",
-      "nabu-model-router",
-      "nabu-1password",
-      "nabu-files",
-      "nabu-media-upload",
-      "nabu-google-workspace",
-      "browser",
-      "minimax",
-      "openai",
-      "duckduckgo",
-      "whatsapp",
-      "slack",
-      "msteams",
-      "imessage",
-      "discord",
-      "telegram"
-    ],
+    "allow": ["nabu-email", "nabu-gateway", "nabu-model-router", "nabu-1password", "nabu-files", "nabu-media-upload", "nabu-google-workspace", "browser", "minimax", "openai", "duckduckgo", "imessage", "telegram"],
     "entries": {
       "nabu-gateway": {
         "enabled": true,
