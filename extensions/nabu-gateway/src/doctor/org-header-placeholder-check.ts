@@ -87,7 +87,9 @@ export const orgHeaderPlaceholderCheck: HealthCheck = {
 let registered = false;
 
 /**
- * Registers the nabu-gateway doctor checks once per process.
+ * ⚠ INERT: core has no generic plugin→doctor seam (bundled-health-checks.ts
+ * hardcodes `policy`), so this never reaches the registry, and the orchestrator
+ * never runs doctor. R-3 is REOPENED — see nabu-integration/tech-debt.md.
  */
 export function registerNabuGatewayDoctorChecks(host?: {
   registerHealthCheck: (check: HealthCheck) => void;

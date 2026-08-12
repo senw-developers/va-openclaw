@@ -91,24 +91,57 @@ constant without new SDK surface (cross-plugin imports are forbidden), and the
 late cache write warms the next resolve rather than corrupting state. Revisit
 only if abandoned-upload volume shows up in backend metrics.
 
-### R-3 — org env fail-open at config layer (FIXED 2026-08-11)
+### R-3 — org env fail-open at config layer (⚠ REOPENED 2026-08-12)
 
 `${OPENCLAW_ORGANIZATION_ID}` substitution warns-and-re-emits the placeholder
 when unset (`src/config/io.ts` onMissing), so the cf-aig-metadata provider
-header would ship the literal `${…}` string to Cloudflare if the env var is
+header ships the literal `${…}` string to Cloudflare when the env var is
 missing.
 
-Closed with a plugin-owned doctor check —
-`extensions/nabu-gateway/src/doctor/org-header-placeholder-check.ts`, registered
-in nabu-gateway's `register()`. It walks `models.providers.*.headers.*` and
-`*.request.headers.*` for values that reference an env var absent or empty in
-the process env, and emits an `error` finding naming the path and the var.
-Chosen as a plugin health check via `openclaw/plugin-sdk/health` (the same seam
-the policy plugin uses) rather than a core doctor check — zero upstream conflict
-surface. Proven against the real seed: org id unset → one error on
-`models.providers.cloudflare-ai-gateway.headers.cf-aig-metadata`; org id set →
-none. Registration is unit-tested because no plugin doctor checks run on the dev
-box to exercise it end-to-end.
+**Marked FIXED on 2026-08-11. That was wrong — the fix is inert. Reopened after
+live testing in a real tenant container (instance `nabu-test`).**
+
+What shipped in `f9022f4b6e5`: a plugin-owned doctor check at
+`extensions/nabu-gateway/src/doctor/org-header-placeholder-check.ts`
+(`findUnresolvedHeaderPlaceholders` + `orgHeaderPlaceholderCheck` +
+`registerNabuGatewayDoctorChecks`), registered from nabu-gateway's `register()`
+via `openclaw/plugin-sdk/health`, with 7 unit tests. The helper itself is
+correct — run directly against the seed it returns one error when the org id is
+unset and none when it is set.
+
+**Why it never fires — two independent reasons, both fatal:**
+
+1. **There is no generic plugin→doctor registration seam.**
+   `src/flows/bundled-health-checks.ts` hardcodes `dirName: "policy"` and calls
+   `registerPolicyDoctorChecks`; there is no manifest health-check contract. Our
+   `register()` runs when the _gateway_ loads plugins, never during `doctor`, so
+   the check is never in the registry. Live proof: `doctor --lint --json` inside
+   the container reports the same **22 checks and zero** org/placeholder findings
+   as before the code existed, even though `/app/dist` contains it.
+2. **Nothing in the deployment path runs `doctor`.** `va-nabu-orchestrator-nest`
+   has zero `doctor` invocations; it verifies tenants purely through Docker
+   container health (`gateway.Health === 'healthy'`, `src/utils/helpers.ts:519`)
+   and `/healthz`. A correctly-registered check would still have no consumer.
+
+**Why the tests missed it:** the registration test called
+`registerNabuGatewayDoctorChecks(host)` with a fake host, so it verified the
+helper and the registration function in isolation — it could never observe that
+nothing calls them during `doctor`. Integration was never exercised.
+
+**Correction to the premise:** visibility is not actually the gap. Core already
+warns at config load naming the exact path (`missing env var
+"OPENCLAW_ORGANIZATION_ID" at
+models.providers.cloudflare-ai-gateway.headers.cf-aig-metadata`), and
+nabu-gateway logs its own warning at boot. The real gap is that it **warns and
+proceeds** — fail-open.
+
+**Shape the replacement must take:** the only signal the orchestrator observes
+is container health, so a missing org id has to fail the healthcheck or refuse
+startup. That is a fail-closed change with real blast radius — a tenant
+provisioned without the var would never come up — so it needs an explicit
+operator decision before implementation. Pending that decision the shipped check
+stays in place: it is inert, costs nothing at runtime, and adds no upstream
+conflict surface.
 
 ### Job 2 — upstream catch-up + `paired.json` → SQLite (MEASURED 2026-08-11)
 

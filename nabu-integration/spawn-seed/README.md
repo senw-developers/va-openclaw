@@ -52,9 +52,14 @@ openclaw config set agents.defaults.model.primary minimax/MiniMax-M2.7
 
 What a standalone image can actually prove:
 
-- **R-3 doctor check** — boot once with `OPENCLAW_ORGANIZATION_ID` empty and
-  `openclaw doctor` must ERROR on the `cf-aig-metadata` header; set it and the
-  error clears. This is the fastest end-to-end check of the newest code.
+- ⚠ **R-3 doctor check — DOES NOT FIRE. Do not use as a test.** Verified live
+  2026-08-12: `doctor --lint` in a tenant container reports the same 22 checks
+  and zero findings as before the check existed. Plugin-registered doctor checks
+  have no registration seam (core hardcodes the `policy` plugin), and the
+  orchestrator never runs `doctor` at all. R-3 is REOPENED — see tech-debt.md.
+  What DOES surface a missing org id is the core config warning at boot, naming
+  `models.providers.cloudflare-ai-gateway.headers.cf-aig-metadata`, plus
+  nabu-gateway's own log line. Both warn and proceed.
 - **Seed invariants** — one agent (`main`), pinned as default, and the default
   survives adding a seat.
 - **Skill-token degradation (F-4)** — leave every `NABU_*_SKILL_TOKEN` unset:
