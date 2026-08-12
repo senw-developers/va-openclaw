@@ -334,6 +334,12 @@ export OPENCLAW_AUTH_PROFILE_SECRET_DIR
 export OPENCLAW_GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
 export OPENCLAW_BRIDGE_PORT="${OPENCLAW_BRIDGE_PORT:-18790}"
 export OPENCLAW_GATEWAY_BIND="${OPENCLAW_GATEWAY_BIND:-lan}"
+# seed: resolved into openclaw.json via ${VAR} substitution; must stay non-empty
+# or config load throws MissingEnvVarError. Prod overrides in .env with the
+# overlay address so no dev-compose hostname is baked into the config.
+export NABU_APP_BASE_URL="${NABU_APP_BASE_URL:-http://app:6001}"
+export NABU_GATEWAY_BASE_URL="${NABU_GATEWAY_BASE_URL:-http://nabu-gateway:6200}"
+export OPENCLAW_GATEWAY_BIND_IP="${OPENCLAW_GATEWAY_BIND_IP:-0.0.0.0}"
 export OPENCLAW_DISABLE_BONJOUR="${OPENCLAW_DISABLE_BONJOUR:-}"
 export OPENCLAW_IMAGE="$IMAGE_NAME"
 export OPENCLAW_IMAGE_APT_PACKAGES="${OPENCLAW_IMAGE_APT_PACKAGES-${OPENCLAW_DOCKER_APT_PACKAGES:-}}"
@@ -563,7 +569,10 @@ upsert_env "$ENV_FILE" \
   OTEL_SEMCONV_STABILITY_OPT_IN \
   OPENCLAW_OTEL_PRELOADED \
   OPENCLAW_SKIP_ONBOARDING \
-  NABU_ENVIRONMENT
+  NABU_ENVIRONMENT \
+  NABU_APP_BASE_URL \
+  NABU_GATEWAY_BASE_URL \
+  OPENCLAW_GATEWAY_BIND_IP
 
 # ---------------------------------------------------------------------------
 # seed: image resolution differs from upstream. Multiple tenant instances share

@@ -137,8 +137,7 @@
         "every": "0m"
       },
       "model": {
-        "primary": "openai/gpt-5.5",
-        "fallbacks": ["minimax/MiniMax-M2.7"]
+        "primary": "minimax/MiniMax-M2.7"
       },
       "imageGenerationModel": {
         "primary": "minimax/image-01"
@@ -272,7 +271,7 @@
         "enabled": true,
         "config": {
           "enabled": true,
-          "apiBaseUrl": "http://nabu-gateway:6200"
+          "apiBaseUrl": "${NABU_GATEWAY_BASE_URL}"
         }
       },
       "nabu-email": {
@@ -283,11 +282,11 @@
             "provider": "default",
             "id": "NABU_EMAIL_SKILL_TOKEN"
           },
-          "apiBaseUrl": "http://app:6001"
+          "apiBaseUrl": "${NABU_APP_BASE_URL}"
         }
       },
       "nabu-model-router": {
-        "enabled": true,
+        "enabled": false,
         "config": {
           "providerId": "cloudflare-ai-gateway",
           "classifier": {
@@ -311,7 +310,7 @@
             "provider": "default",
             "id": "NABU_ONE_PASSWORD_SKILL_TOKEN"
           },
-          "apiBaseUrl": "http://app:6001"
+          "apiBaseUrl": "${NABU_APP_BASE_URL}"
         }
       },
       "nabu-media-upload": {
@@ -323,7 +322,7 @@
       "nabu-files": {
         "enabled": false,
         "config": {
-          "apiBaseUrl": "http://app:6001",
+          "apiBaseUrl": "${NABU_APP_BASE_URL}",
           "apiToken": {
             "source": "env",
             "provider": "default",
@@ -339,7 +338,7 @@
             "provider": "default",
             "id": "NABU_GOOGLE_WORKSPACE_SKILL_TOKEN"
           },
-          "apiBaseUrl": "http://app:6001",
+          "apiBaseUrl": "${NABU_APP_BASE_URL}",
           "tokenVersion": 0
         }
       },

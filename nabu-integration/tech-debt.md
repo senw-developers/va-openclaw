@@ -182,15 +182,34 @@ paid for at every merge. Unlike F-4 there is no existing core seam to reuse, so
 there is nothing to migrate onto. Keep the two copies in sync by hand; if a
 third plugin ever needs it, re-open rather than growing a fourth.
 
-### C-5 — usage-ingest has never resolved its backend host (2026-08-11)
+### C-5 — usage-ingest backend host (⚠ CORRECTED 2026-08-12)
 
-The seed points nabu-gateway at `http://nabu-gateway:6200`. That name only
-resolves in the backend's _development_ compose; in staging and production
-their containers sit on `app-network` alone, and tenants run on a different
-host and cloud provider joined only by NetBird. So the metering POST has been
-failing DNS since first deployment — this predates ADR-0008 rather than being
-caused by it. Provenance: our own `e8770727e4` (2026-05-15) fixed the service
-and port but left a dev-only hostname. Wider than one plugin: the backend has
+**The original finding was drawn from OUR development seed, which had regressed —
+not from what production runs.** After cloning
+`senw-developers/va-nabu-orchestrator-nest` (the deployed copy) the real picture
+is:
+
+- The **deployed** seed never hardcodes a hostname. Its plugin `apiBaseUrl`
+  values are `${NABU_APP_BASE_URL}` / `${NABU_GATEWAY_BASE_URL}`, its compose
+  passes both to the gateway and cli services, its `docker-setup.sh` exports
+  them with dev defaults, and the orchestrator's
+  `docker/{staging,production}/.env.template` inject per-environment values.
+- **Our development seed had dropped that parameterization entirely**, baking
+  the dev-compose defaults `http://app:6001` / `http://nabu-gateway:6200` into
+  `openclaw.json` and omitting the env passthrough from compose, setup and
+  `.env.example`. Provenance: our own `e8770727e4` (2026-05-15).
+
+So "usage-ingest has never resolved" was true only of the development seed. In
+production the address is whatever ops sets. **Restored 2026-08-12** — the dev
+seed is parameterized again and matches the deployed shape.
+
+⚠ Had our seed been copied to the orchestrator in that state it would have
+pinned every tenant to dev-compose hostnames. The correction is owed to the
+backend: our C-1/C-5 memo overstated this as a production-wide outage.
+
+Remaining true: usage-ingest listens on **6200** while the four skill routes are
+on **6001**, so one base URL cannot serve both — which is why the seed keeps two
+separate variables. Wider than one plugin: the backend has
 no push path for nabu-files or nabu-gateway `apiBaseUrl` at all, so three
 plugins are only reconfigurable via `config.patch`. Settle on the host with
 `docker exec nabu-<N>-gateway getent hosts nabu-gateway` (expect exit 2).

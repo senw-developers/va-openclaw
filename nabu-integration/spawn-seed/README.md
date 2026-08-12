@@ -12,6 +12,25 @@
 - Never re-vendor FROM the orchestrator copy back into this one — divergence
   there means a pending sync, not a source of truth.
 
+## Drift audit vs the deployed copy (2026-08-12)
+
+`senw-developers/va-nabu-orchestrator-nest` is cloned locally read-only for
+comparison. The first audit found drift in BOTH directions; ours had lost three
+production learnings, now restored:
+
+- `${NABU_APP_BASE_URL}` / `${NABU_GATEWAY_BASE_URL}` parameterization (we had
+  hardcoded dev-compose hostnames — see C-5, corrected).
+- `OPENCLAW_GATEWAY_BIND_IP` on the published ports, so prod can pin the
+  gateway to the overlay and have no public inbound.
+- Healthcheck `interval: 5s` / `start_period: 90s` — a 30s gap once hid a
+  gateway that was ready inside the 90s provision ceiling.
+
+Ours remains ahead on: `cap_drop` NET_RAW/NET_ADMIN + `no-new-privileges`, the
+auth-profile secret mount, OTEL and skill-token passthrough, SecretRef tokens,
+`agents.list` pinning `main` as default, fail-closed channel stubs, and a newer
+`docker-setup.sh` vendored from upstream `fc6400ede3`. Re-run this audit before
+each copy to the orchestrator.
+
 ## Standalone local testing (no backend attached)
 
 The seed's model chain is `openai/gpt-5.5` → `minimax/MiniMax-M2.7`, and the
