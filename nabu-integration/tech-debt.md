@@ -146,6 +146,23 @@ self-guards. Blast radius recorded in memo `bbf338e6012b`. Remaining risk is
 theirs — enforcement is off by their maintainer's decision, so nothing closes
 the gate today regardless.
 
+### R-6 — Cloudflare provider key env var mismatch (dormant, found 2026-08-11)
+
+The seed's `cloudflare-ai-gateway` provider declares no `apiKey`/`keyRef`
+(`models.providers.cloudflare-ai-gateway` is baseUrl + api + headers only), so
+core falls back to the env convention — which for that provider id is
+**`CLOUDFLARE_API_KEY`** (`src/llm/env-api-keys.ts:187`). The seed's compose and
+`.env.example` supply only **`CLOUDFLARE_AI_GATEWAY_API_KEY`**, so the provider
+would resolve no credential.
+
+Dormant today: the model chain is `openai/gpt-5.5` → `minimax` and never routes
+through Cloudflare, which is exactly why metering is zero (R-5). It becomes a
+live auth failure the moment anyone points the chain back at
+`cloudflare-ai-gateway` to restore metering — with a confusing "no credential"
+error rather than an obvious misconfiguration. Fix when closing R-5: either
+rename the seed env var to `CLOUDFLARE_API_KEY` or give the provider an explicit
+SecretRef `keyRef`.
+
 ### R-5 — metering is zero by decision (2026-08-10)
 
 Backend metering is Cloudflare-AI-Gateway-log-only, and the seed's primary
