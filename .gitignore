@@ -108,6 +108,8 @@ USER.md
 # per-instance + per-user-agent provisioning and MUST be tracked.
 !nabu-integration/spawn-seed/.openclaw/**/IDENTITY.md
 !nabu-integration/spawn-seed/.openclaw/**/USER.md
+!nabu-integration/free-tier-seed/.openclaw/**/IDENTITY.md
+!nabu-integration/free-tier-seed/.openclaw/**/USER.md
 *.tgz
 *.tar.gz
 *.zip

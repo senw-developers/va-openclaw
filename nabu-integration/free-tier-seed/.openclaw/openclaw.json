@@ -1,0 +1,350 @@
+{
+  "meta": {
+    "lastTouchedVersion": "2026.3.24",
+    "lastTouchedAt": "2026-03-26T14:08:36.555Z"
+  },
+  "wizard": {
+    "lastRunAt": "2026-03-26T14:07:56.149Z",
+    "lastRunVersion": "2026.3.24",
+    "lastRunCommand": "onboard",
+    "lastRunMode": "local"
+  },
+  "auth": {
+    "profiles": {
+      "cloudflare-ai-gateway:default": {
+        "provider": "cloudflare-ai-gateway",
+        "mode": "api_key"
+      },
+      "openai:default": {
+        "provider": "openai",
+        "mode": "oauth"
+      },
+      "minimax:global": {
+        "provider": "minimax",
+        "mode": "api_key"
+      }
+    }
+  },
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "cloudflare-ai-gateway": {
+        "baseUrl": "https://gateway.ai.cloudflare.com/v1/28e2bfffc24a3bc753e2c461f8e8627f/openclaw/anthropic",
+        "api": "anthropic-messages",
+        "headers": {
+          "cf-aig-metadata": "{\"organizationId\":\"${OPENCLAW_ORGANIZATION_ID}\"}",
+          "cf-aig-collect-log": "true"
+        },
+        "models": [
+          {
+            "id": "claude-haiku-4-5",
+            "name": "Claude Haiku 4.5",
+            "reasoning": false,
+            "input": ["text", "image"],
+            "cost": {
+              "input": 0.8,
+              "output": 4,
+              "cacheRead": 0.08,
+              "cacheWrite": 1
+            },
+            "contextWindow": 200000,
+            "maxTokens": 8192,
+            "compat": {
+              "supportsUsageInStreaming": true
+            }
+          },
+          {
+            "id": "claude-sonnet-4-5",
+            "name": "Claude Sonnet 4.5",
+            "reasoning": true,
+            "input": ["text", "image"],
+            "cost": {
+              "input": 3,
+              "output": 15,
+              "cacheRead": 0.3,
+              "cacheWrite": 3.75
+            },
+            "contextWindow": 200000,
+            "maxTokens": 64000,
+            "compat": {
+              "supportsUsageInStreaming": true
+            }
+          },
+          {
+            "id": "claude-opus-4-6",
+            "name": "Claude Opus 4.6",
+            "reasoning": true,
+            "input": ["text", "image"],
+            "cost": {
+              "input": 3,
+              "output": 15,
+              "cacheRead": 0.3,
+              "cacheWrite": 3.75
+            },
+            "contextWindow": 200000,
+            "maxTokens": 64000,
+            "compat": {
+              "supportsUsageInStreaming": true
+            }
+          }
+        ]
+      },
+      "minimax": {
+        "baseUrl": "https://api.minimax.io/anthropic",
+        "models": [
+          {
+            "id": "MiniMax-M2.7",
+            "name": "MiniMax M2.7",
+            "reasoning": true,
+            "input": ["text", "image"],
+            "cost": {
+              "input": 0.3,
+              "output": 1.2,
+              "cacheRead": 0.06,
+              "cacheWrite": 0.375
+            },
+            "contextWindow": 204800,
+            "maxTokens": 131072
+          },
+          {
+            "id": "image-01",
+            "name": "MiniMax Image-01",
+            "input": ["text"],
+            "cost": {
+              "input": 0,
+              "output": 0
+            }
+          },
+          {
+            "id": "MiniMax-Hailuo-2.3",
+            "name": "MiniMax Hailuo 2.3",
+            "input": ["text"],
+            "cost": {
+              "input": 0,
+              "output": 0
+            }
+          }
+        ],
+        "api": "anthropic-messages",
+        "authHeader": true
+      }
+    }
+  },
+  "agents": {
+    "list": [{ "id": "main", "default": true }],
+    "defaults": {
+      "heartbeat": {
+        "every": "0m"
+      },
+      "model": {
+        "primary": "minimax/MiniMax-M2.7"
+      },
+      "imageGenerationModel": {
+        "primary": "minimax/image-01"
+      },
+      "videoGenerationModel": {
+        "primary": "minimax/MiniMax-Hailuo-2.3"
+      },
+      "models": {
+        "cloudflare-ai-gateway/claude-haiku-4-5": {
+          "alias": "Haiku 4.5"
+        },
+        "cloudflare-ai-gateway/claude-sonnet-4-5": {
+          "alias": "Sonnet 4.5"
+        },
+        "cloudflare-ai-gateway/claude-opus-4-6": {
+          "alias": "Opus 4.6"
+        },
+        "openai/gpt-5.5": {
+          "agentRuntime": {
+            "id": "openclaw"
+          }
+        },
+        "minimax/MiniMax-M2.7": {
+          "alias": "Minimax"
+        }
+      },
+      "workspace": "/home/node/.openclaw/workspace",
+      "sandbox": {
+        "mode": "off"
+      }
+    }
+  },
+  "tools": {
+    "profile": "messaging",
+    "alsoAllow": [],
+    "deny": ["sessions_send", "sessions_list", "sessions_history"]
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto",
+    "restart": true,
+    "ownerDisplay": "raw"
+  },
+  "session": {
+    "dmScope": "per-account-channel-peer"
+  },
+  "channels": {
+    "whatsapp": {
+      "enabled": false,
+      "dmPolicy": "disabled",
+      "allowFrom": [],
+      "groupPolicy": "disabled",
+      "groupAllowFrom": [],
+      "accounts": {}
+    },
+    "telegram": {
+      "enabled": false,
+      "dmPolicy": "disabled",
+      "allowFrom": [],
+      "groupPolicy": "disabled",
+      "groupAllowFrom": [],
+      "streaming": { "mode": "off" },
+      "network": { "autoSelectFamily": false },
+      "accounts": {}
+    }
+  },
+  "gateway": {
+    "port": 18789,
+    "mode": "local",
+    "bind": "lan",
+    "controlUi": {
+      "allowedOrigins": ["http://127.0.0.1:18789"]
+    },
+    "auth": {
+      "mode": "token",
+      "token": "${OPENCLAW_GATEWAY_TOKEN}"
+    },
+    "tailscale": {
+      "mode": "off",
+      "resetOnExit": false
+    },
+    "http": {
+      "endpoints": {
+        "chatCompletions": {
+          "enabled": true
+        },
+        "responses": {
+          "enabled": true
+        }
+      }
+    },
+    "nodes": {
+      "denyCommands": [
+        "camera.snap",
+        "camera.clip",
+        "screen.record",
+        "contacts.add",
+        "calendar.add",
+        "reminders.add",
+        "sms.send"
+      ]
+    }
+  },
+  "plugins": {
+    "allow": ["nabu-files", "nabu-gateway", "nabu-media-upload", "minimax", "openai"],
+    "entries": {
+      "nabu-gateway": {
+        "enabled": true,
+        "config": {
+          "enabled": true,
+          "apiBaseUrl": "${NABU_GATEWAY_BASE_URL}"
+        }
+      },
+      "nabu-email": {
+        "enabled": false,
+        "config": {
+          "apiToken": {
+            "source": "env",
+            "provider": "default",
+            "id": "NABU_EMAIL_SKILL_TOKEN"
+          },
+          "apiBaseUrl": "${NABU_APP_BASE_URL}"
+        }
+      },
+      "nabu-model-router": {
+        "enabled": false,
+        "config": {
+          "providerId": "cloudflare-ai-gateway",
+          "classifier": {
+            "model": "claude-haiku-4-5",
+            "timeoutMs": 5000,
+            "apiKeyEnvVar": "CLOUDFLARE_AI_GATEWAY_API_KEY"
+          },
+          "tiers": {
+            "simple": "cloudflare-ai-gateway/claude-haiku-4-5",
+            "medium": "cloudflare-ai-gateway/claude-sonnet-4-5",
+            "hard": "cloudflare-ai-gateway/claude-opus-4-6"
+          },
+          "escalateOnLowConfidence": true
+        }
+      },
+      "nabu-1password": {
+        "enabled": false,
+        "config": {
+          "apiToken": {
+            "source": "env",
+            "provider": "default",
+            "id": "NABU_ONE_PASSWORD_SKILL_TOKEN"
+          },
+          "apiBaseUrl": "${NABU_APP_BASE_URL}"
+        }
+      },
+      "nabu-media-upload": {
+        "enabled": true
+      },
+      "openai": {
+        "enabled": true
+      },
+      "nabu-files": {
+        "enabled": true,
+        "config": {
+          "apiBaseUrl": "${NABU_APP_BASE_URL}"
+        }
+      },
+      "nabu-google-workspace": {
+        "enabled": false,
+        "config": {
+          "apiToken": {
+            "source": "env",
+            "provider": "default",
+            "id": "NABU_GOOGLE_WORKSPACE_SKILL_TOKEN"
+          },
+          "apiBaseUrl": "${NABU_APP_BASE_URL}",
+          "tokenVersion": 0
+        }
+      },
+      "minimax": {
+        "enabled": true,
+        "config": {
+          "webSearch": {
+            "apiKey": {
+              "source": "env",
+              "provider": "default",
+              "id": "MINIMAX_API_KEY"
+            },
+            "region": "global"
+          }
+        }
+      },
+      "browser": {
+        "enabled": false
+      }
+    }
+  },
+  "browser": {
+    "enabled": false,
+    "headless": true,
+    "noSandbox": true
+  },
+  "skills": {
+    "entries": {
+      "1password": {
+        "enabled": false
+      },
+      "gog": {
+        "enabled": false
+      }
+    }
+  }
+}

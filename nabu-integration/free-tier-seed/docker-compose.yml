@@ -1,0 +1,112 @@
+services:
+  openclaw-gateway:
+    container_name: ${COMPOSE_PROJECT_NAME}-gateway
+    image: ${OPENCLAW_IMAGE:-openclaw:local}
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
+      # Shared free-tier instance: leave EMPTY. A filled value flips nabu-files to
+      # the dedicated path (config skill token) and the broker path never runs.
+      OPENCLAW_ORGANIZATION_ID: ${OPENCLAW_ORGANIZATION_ID:-}
+      # Consumed by openclaw.json via ${VAR} substitution; prod overrides with
+      # the overlay IP so plugins never hardcode a dev-compose hostname.
+      NABU_APP_BASE_URL: ${NABU_APP_BASE_URL:-http://app:6001}
+      NABU_GATEWAY_BASE_URL: ${NABU_GATEWAY_BASE_URL:-http://nabu-gateway:6200}
+      OPENCLAW_ALLOW_INSECURE_PRIVATE_WS: ${OPENCLAW_ALLOW_INSECURE_PRIVATE_WS:-}
+      OPENCLAW_DISABLE_BONJOUR: ${OPENCLAW_DISABLE_BONJOUR:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-}
+      OPENCLAW_OTEL_PRELOADED: ${OPENCLAW_OTEL_PRELOADED:-}
+      CLOUDFLARE_AI_GATEWAY_API_KEY: ${CLOUDFLARE_AI_GATEWAY_API_KEY:-}
+      MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
+      # Sole files-api credential source on the shared instance: nabu-files brokers
+      # a per-org token from this actor secret (read from process.env by broker.ts).
+      # Absent => the broker fails closed and free-tier uploads are refused.
+      NABU_FREE_TIER_BROKER_TOKEN: ${NABU_FREE_TIER_BROKER_TOKEN:-}
+      CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY:-}
+      CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY:-}
+      CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
+      TZ: ${OPENCLAW_TZ:-UTC}
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
+      # Auth-profile secrets persist outside the config dir so re-provisioning
+      # keeps OAuth material; default must match docker-setup.sh (per-instance
+      # anchor — co-hosted tenants must not share a secret store).
+      - ${OPENCLAW_AUTH_PROFILE_SECRET_DIR:-${OPENCLAW_CONFIG_DIR}-auth-profile-secrets}:/home/node/.config/openclaw
+      ## Uncomment the lines below to enable sandbox isolation
+      ## (agents.defaults.sandbox). Requires Docker CLI in the image
+      ## (build with --build-arg OPENCLAW_INSTALL_DOCKER_CLI=1) or use
+      ## docker-setup.sh with OPENCLAW_SANDBOX=1 for automated setup.
+      ## Set DOCKER_GID to the host's docker group GID (run: stat -c '%g' /var/run/docker.sock).
+      # - /var/run/docker.sock:/var/run/docker.sock
+    # group_add:
+    #   - "${DOCKER_GID:-999}"
+    # Same hardening as the root compose gateway service (seam D11) — the
+    # gateway must not run with more capabilities than the CLI sidecar.
+    cap_drop:
+      - NET_RAW
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      # Prod pins these to the overlay IP so the gateway has no public inbound;
+      # empty = 0.0.0.0 (dev). The overlay iface must exist before Docker starts.
+      - '${OPENCLAW_GATEWAY_BIND_IP:-0.0.0.0}:${OPENCLAW_GATEWAY_PORT:-18789}:18789'
+      - '${OPENCLAW_GATEWAY_BIND_IP:-0.0.0.0}:${OPENCLAW_BRIDGE_PORT:-18790}:18790'
+    init: true
+    restart: unless-stopped
+    command: ['node', 'dist/index.js', 'gateway', '--bind', '${OPENCLAW_GATEWAY_BIND:-lan}', '--port', '18789']
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:18789/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      # A 30s gap hid a gateway that was ready inside the 90s provision ceiling.
+      # start_period covers boot so a slow start reads `starting`, not `unhealthy`.
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    networks:
+      - openclaw-network
+
+  openclaw-cli:
+    container_name: ${COMPOSE_PROJECT_NAME}-cli
+    image: ${OPENCLAW_IMAGE:-openclaw:local}
+    network_mode: 'service:openclaw-gateway'
+    cap_drop:
+      - NET_RAW
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
+      OPENCLAW_ORGANIZATION_ID: ${OPENCLAW_ORGANIZATION_ID:-}
+      # Consumed by openclaw.json via ${VAR} substitution; prod overrides with
+      # the overlay IP so plugins never hardcode a dev-compose hostname.
+      NABU_APP_BASE_URL: ${NABU_APP_BASE_URL:-http://app:6001}
+      NABU_GATEWAY_BASE_URL: ${NABU_GATEWAY_BASE_URL:-http://nabu-gateway:6200}
+      OPENCLAW_ALLOW_INSECURE_PRIVATE_WS: ${OPENCLAW_ALLOW_INSECURE_PRIVATE_WS:-}
+      BROWSER: echo
+      CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY:-}
+      CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY:-}
+      CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
+      TZ: ${OPENCLAW_TZ:-UTC}
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
+      - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
+      # Same auth-profile secret store as the gateway service — CLI auth flows
+      # (onboard/models auth) must write where the gateway reads.
+      - ${OPENCLAW_AUTH_PROFILE_SECRET_DIR:-${OPENCLAW_CONFIG_DIR}-auth-profile-secrets}:/home/node/.config/openclaw
+    stdin_open: true
+    tty: true
+    init: true
+    entrypoint: ['node', 'dist/index.js']
+    depends_on:
+      - openclaw-gateway
+
+networks:
+  openclaw-network:
+    external: true
