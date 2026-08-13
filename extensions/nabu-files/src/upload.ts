@@ -5,7 +5,8 @@ import * as http from "node:http";
 import * as https from "node:https";
 import { basename } from "node:path";
 import type { OpenClawPluginApi } from "../api.js";
-import { getLivePluginConfig, hasApiToken } from "./config.js";
+import { resolveTenantAuth } from "./broker.js";
+import { getLivePluginConfig } from "./config.js";
 import {
   DEFAULT_REQUEST_TIMEOUT_MS,
   IDEMPOTENCY_KEY_MAX,
@@ -17,7 +18,6 @@ import type {
   FilesApiErrorEnvelope,
   NabuFilesConfig,
 } from "./nabu-files.interface.js";
-import { resolveOrganizationId } from "./org.js";
 import { isRetryableHttpError, withBackoff } from "./retry.js";
 
 /**
@@ -60,18 +60,15 @@ export async function uploadFile(
   input: UploadCallOptions,
 ): Promise<FileResource> {
   const cfg = getLivePluginConfig(api);
-  if (!hasApiToken(cfg)) {
-    throw new Error(`${LOG_PREFIX} apiToken not configured`);
-  }
   // Backend keys ownership on the numeric app user id; refuse channel-native
   // senderIds (phone numbers, chat handles) rather than mis-attributing them.
   const userId = input.userId;
   if (typeof userId !== "string" || !/^\d+$/.test(userId)) {
     throw new Error(`${LOG_PREFIX} non-numeric userId on upload; refusing`);
   }
-  // Composed tenancy (G1): org rides beside userId. Per-container env on a
-  // dedicated tenant, else derived from a shared-instance agent. Fail-closed.
-  const organizationId = resolveOrganizationId(input.agentId);
+  // Composed tenancy (G1): org + skill token together. Config token + env org on
+  // a dedicated tenant, else a per-org brokered token for the shared instance.
+  const { organizationId, skillToken } = await resolveTenantAuth(cfg, input.agentId);
 
   const key = buildIdempotencyKey(input);
 
@@ -100,6 +97,7 @@ export async function uploadFile(
           cfg,
           userId,
           organizationId,
+          skillToken,
           idempotencyKey: key,
           requestId: input.responseId,
           filename,
@@ -176,6 +174,7 @@ type PostInput = {
   cfg: NabuFilesConfig;
   userId: string;
   organizationId: string;
+  skillToken: string;
   idempotencyKey: string;
   requestId: string | undefined;
   filename: string;
@@ -191,7 +190,7 @@ async function postSkillUpload(input: PostInput): Promise<FileResource> {
   const headers: Record<string, string> = {
     "Content-Type": `multipart/form-data; boundary=${boundary}`,
     "Content-Length": String(body.length),
-    "x-skill-token": input.cfg.apiToken,
+    "x-skill-token": input.skillToken,
     "x-organization-id": input.organizationId,
     "x-user-id": input.userId,
     "Idempotency-Key": input.idempotencyKey,

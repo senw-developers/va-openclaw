@@ -6,7 +6,8 @@ import {
   type MediaUploader,
   type OpenClawPluginApi,
 } from "./api.js";
-import { hasApiToken, getLivePluginConfig } from "./src/config.js";
+import { BROKER_TOKEN_ENV, canServeFilesApi } from "./src/broker.js";
+import { getLivePluginConfig } from "./src/config.js";
 import { LOG_PREFIX, PLUGIN_ID } from "./src/nabu-files.constants.js";
 import { resolveFiles } from "./src/resolve.js";
 import { getFileIdsForToolCall, uploadFile } from "./src/upload.js";
@@ -27,9 +28,9 @@ export default definePluginEntry({
 
     api.on("gateway_start", () => {
       const cfg = getLivePluginConfig(api);
-      if (!hasApiToken(cfg)) {
+      if (!canServeFilesApi(cfg)) {
         api.logger.warn(
-          `${LOG_PREFIX} apiToken not configured; media uploader NOT registered (local-path fallback active)`,
+          `${LOG_PREFIX} no apiToken and no ${BROKER_TOKEN_ENV}; media uploader NOT registered (local-path fallback active)`,
         );
         return;
       }

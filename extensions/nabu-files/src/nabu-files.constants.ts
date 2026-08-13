@@ -1,6 +1,7 @@
 export const DEFAULT_API_BASE_URL = "http://app:6001";
 export const SKILL_UPLOAD_PATH = "/api/v1/files-api/skill-upload";
 export const SKILL_RESOLVE_PATH = "/api/v1/files-api/skill-resolve";
+export const SKILL_TOKEN_PATH = "/api/v1/files-api/skill-token";
 export const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 export const DEFAULT_MAX_RETRIES = 3;
 export const DEFAULT_MAX_CONCURRENT_UPLOADS = 8;
