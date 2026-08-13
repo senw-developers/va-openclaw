@@ -11,7 +11,12 @@ import { modelKey, parseModelRef, resolveDefaultModelForAgent } from "../agents/
 import { createModelVisibilityPolicy } from "../agents/model-visibility-policy.js";
 import { getRuntimeConfig } from "../config/io.js";
 import { loadManifestMetadataSnapshot } from "../plugins/manifest-contract-eligibility.js";
-import { buildAgentMainSessionKey, normalizeAgentId } from "../routing/session-key.js";
+import {
+  buildAgentMainSessionKey,
+  isUnscopedSessionKeySentinel,
+  normalizeAgentId,
+  scopeLegacySessionKeyToAgent,
+} from "../routing/session-key.js";
 import { normalizeMessageChannel } from "../utils/message-channel.js";
 import { getHeader } from "./http-auth-utils.js";
 import { loadGatewayModelCatalog } from "./server-model-catalog.js";
@@ -154,7 +159,13 @@ function resolveSessionKey(params: {
 }): string {
   const explicit = getHeader(params.req, "x-openclaw-session-key")?.trim();
   if (explicit) {
-    return explicit;
+    // A relay sends its key un-agent-scoped (`api:<org>:<user>:<ts>`); bind it to
+    // the resolved agent here, else a legacy key falls through to the default
+    // agent downstream and the turn runs on `main`, defeating agent-org routing.
+    return isUnscopedSessionKeySentinel(explicit)
+      ? explicit
+      : (scopeLegacySessionKeyToAgent({ agentId: params.agentId, sessionKey: explicit }) ??
+          explicit);
   }
 
   const user = params.user?.trim();

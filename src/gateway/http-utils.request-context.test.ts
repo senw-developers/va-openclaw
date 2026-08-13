@@ -55,6 +55,54 @@ describe("resolveGatewayRequestContext", () => {
 
     expect(result.sessionKey).toContain("openresponses-user:alice");
   });
+
+  it("binds an explicit relay session-key header to the model-resolved agent (Ask #8)", () => {
+    const result = resolveGatewayRequestContext({
+      req: createReq({ "x-openclaw-session-key": "api:42:13:9999" }),
+      model: "openclaw:agent-org-42",
+      sessionPrefix: "openresponses",
+      defaultMessageChannel: "webchat",
+    });
+
+    // Without scoping, the legacy key falls through to the default agent
+    // downstream and the turn silently runs on `main` instead of agent-org-42.
+    expect(result.agentId).toBe("agent-org-42");
+    expect(result.sessionKey).toBe("agent:agent-org-42:api:42:13:9999");
+  });
+
+  it("scopes an explicit relay key to `main` for the default agent", () => {
+    const result = resolveGatewayRequestContext({
+      req: createReq({ "x-openclaw-session-key": "api:1:42:9999" }),
+      model: "openclaw",
+      sessionPrefix: "openresponses",
+      defaultMessageChannel: "webchat",
+    });
+
+    expect(result.agentId).toBe("main");
+    expect(result.sessionKey).toBe("agent:main:api:1:42:9999");
+  });
+
+  it("passes an already agent-scoped session-key header through unchanged", () => {
+    const result = resolveGatewayRequestContext({
+      req: createReq({ "x-openclaw-session-key": "agent:agent-org-7:api:7:1:5" }),
+      model: "openclaw:agent-org-42",
+      sessionPrefix: "openresponses",
+      defaultMessageChannel: "webchat",
+    });
+
+    expect(result.sessionKey).toBe("agent:agent-org-7:api:7:1:5");
+  });
+
+  it("leaves an unscoped session-key sentinel untouched", () => {
+    const result = resolveGatewayRequestContext({
+      req: createReq({ "x-openclaw-session-key": "global" }),
+      model: "openclaw:agent-org-42",
+      sessionPrefix: "openresponses",
+      defaultMessageChannel: "webchat",
+    });
+
+    expect(result.sessionKey).toBe("global");
+  });
 });
 
 describe("resolveTrustedHttpOperatorScopes", () => {
