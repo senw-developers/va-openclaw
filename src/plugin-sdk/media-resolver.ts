@@ -6,6 +6,12 @@ export type MediaResolverInput = {
   readonly expirySeconds?: number;
   readonly requestId?: string;
   readonly userId?: string;
+  /**
+   * Resolved run agent id, so an org-scoped resolver can derive the tenant from
+   * a shared-instance `agent-org-<orgId>` agent when no per-container org env is
+   * set. Absent for un-agent-scoped callers.
+   */
+  readonly agentId?: string;
 };
 
 export type FileRef =

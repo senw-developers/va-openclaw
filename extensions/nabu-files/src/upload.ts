@@ -17,6 +17,7 @@ import type {
   FilesApiErrorEnvelope,
   NabuFilesConfig,
 } from "./nabu-files.interface.js";
+import { resolveOrganizationId } from "./org.js";
 import { isRetryableHttpError, withBackoff } from "./retry.js";
 
 /**
@@ -51,6 +52,7 @@ export type UploadCallOptions = {
   toolCallId?: string;
   source?: string;
   userId?: string;
+  agentId?: string;
 };
 
 export async function uploadFile(
@@ -67,12 +69,9 @@ export async function uploadFile(
   if (typeof userId !== "string" || !/^\d+$/.test(userId)) {
     throw new Error(`${LOG_PREFIX} non-numeric userId on upload; refusing`);
   }
-  // Composed tenancy (G1): org rides beside userId — one gateway stack per
-  // org, id from env. Fail-closed so uploads never land unscoped.
-  const organizationId = process.env.OPENCLAW_ORGANIZATION_ID;
-  if (!organizationId) {
-    throw new Error(`${LOG_PREFIX} OPENCLAW_ORGANIZATION_ID not set`);
-  }
+  // Composed tenancy (G1): org rides beside userId. Per-container env on a
+  // dedicated tenant, else derived from a shared-instance agent. Fail-closed.
+  const organizationId = resolveOrganizationId(input.agentId);
 
   const key = buildIdempotencyKey(input);
 

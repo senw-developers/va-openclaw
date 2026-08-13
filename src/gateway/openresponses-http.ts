@@ -39,6 +39,7 @@ import {
   type InputImageSource,
 } from "../media/input-files.js";
 import { getMediaUploader, type MediaUploadResult } from "../plugin-sdk/media-uploader.js";
+import { resolveAgentIdFromSessionKey } from "../routing/session-key.js";
 import { defaultRuntime } from "../runtime.js";
 import { resolveAssistantStreamDeltaText } from "./agent-event-assistant-text.js";
 import type { AuthRateLimiter } from "./auth-rate-limit.js";
@@ -509,6 +510,7 @@ async function resolveTurnFileRefs(
     return await gatherFileRefsForMessages(turnMessages, {
       requestId: `openresponses-http:${sessionKey}`,
       userAttachments: turnUserAttachments,
+      agentId: resolveAgentIdFromSessionKey(sessionKey),
       ...(identity.userId ? { userId: identity.userId } : {}),
     });
   } catch {
@@ -520,7 +522,7 @@ async function uploadInboundImage(
   image: ImageContent,
   responseId: string,
   index: number,
-  identity: { userId?: string },
+  identity: { userId?: string; agentId?: string },
 ): Promise<MediaUploadResult | null> {
   const uploader = getMediaUploader();
   if (!uploader) return null;
@@ -541,6 +543,7 @@ async function uploadInboundImage(
       mediaIndex: index,
       source: "openresponses-http:user-upload",
       userId: identity.userId,
+      ...(identity.agentId ? { agentId: identity.agentId } : {}),
     });
   } catch (err) {
     logWarn(`openresponses: input_image upload failed: ${(err as Error).message ?? String(err)}`);
@@ -735,6 +738,7 @@ export async function handleOpenResponsesHttpRequest(
               // HTTP per-user upload path: relies on senw-core 401 to fail-closed when ownerUserId is non-numeric.
               const uploaded = await uploadInboundImage(image, responseId, images.length - 1, {
                 userId: ownerUserId,
+                agentId,
               });
               if (uploaded) inboundUploadedFileIds.push(uploaded.fileId);
               continue;

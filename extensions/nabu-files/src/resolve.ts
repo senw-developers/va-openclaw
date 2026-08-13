@@ -15,6 +15,7 @@ import type {
   ResolveResponse,
   ResolvedFile,
 } from "./nabu-files.interface.js";
+import { resolveOrganizationId } from "./org.js";
 import { isRetryableHttpError, withBackoff } from "./retry.js";
 
 class ResolveHttpError extends Error {
@@ -33,7 +34,7 @@ class ResolveHttpError extends Error {
 export async function resolveFiles(
   api: OpenClawPluginApi,
   fileIds: number[],
-  opts?: { expirySeconds?: number; requestId?: string; userId?: string },
+  opts?: { expirySeconds?: number; requestId?: string; userId?: string; agentId?: string },
 ): Promise<ResolvedFile[]> {
   if (fileIds.length === 0) return [];
 
@@ -48,12 +49,9 @@ export async function resolveFiles(
   if (typeof userId !== "string" || !/^\d+$/.test(userId)) {
     throw new Error(`${LOG_PREFIX} non-numeric userId on resolve; refusing (per-user isolation)`);
   }
-  // Composed tenancy (G1): org rides beside userId — one gateway stack per
-  // org, id from env. Fail-closed so resolves never run unscoped.
-  const organizationId = process.env.OPENCLAW_ORGANIZATION_ID;
-  if (!organizationId) {
-    throw new Error(`${LOG_PREFIX} OPENCLAW_ORGANIZATION_ID not set`);
-  }
+  // Composed tenancy (G1): org rides beside userId. Per-container env on a
+  // dedicated tenant, else derived from a shared-instance agent. Fail-closed.
+  const organizationId = resolveOrganizationId(opts?.agentId);
 
   const maxAttempts = Math.max(1, cfg.maxRetries ?? 3);
   const chunks = chunk(fileIds, RESOLVE_BATCH_MAX);

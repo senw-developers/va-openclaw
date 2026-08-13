@@ -58,6 +58,7 @@ export default definePluginEntry({
           ...(input.expirySeconds !== undefined ? { expirySeconds: input.expirySeconds } : {}),
           ...(input.requestId ? { requestId: input.requestId } : {}),
           ...(input.userId ? { userId: input.userId } : {}),
+          ...(input.agentId ? { agentId: input.agentId } : {}),
         });
       };
       unregisterResolver = registerMediaResolver(resolver);

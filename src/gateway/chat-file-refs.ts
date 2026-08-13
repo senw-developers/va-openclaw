@@ -13,6 +13,7 @@ export const USER_ATTACHMENT_CUSTOM_TYPE = "nabu-file-attachment";
 export type ResolveIdentityOpts = {
   requestId?: string;
   userId?: string;
+  agentId?: string;
 };
 
 // Walks raw JSONL. User messages do not carry details.nabuFileIds, so inbound
@@ -253,6 +254,7 @@ async function batchResolve(
     const refs = await resolver({
       fileIds,
       userId: opts.userId,
+      ...(opts.agentId ? { agentId: opts.agentId } : {}),
       ...(opts.requestId ? { requestId: opts.requestId } : {}),
     });
     for (const ref of refs) map.set(ref.fileId, ref);

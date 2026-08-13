@@ -343,6 +343,7 @@ async function uploadCompletionAttachmentsInPlace(
             mediaIndex,
             source: `media_generation_completion:${context.toolName}`,
             userId,
+            agentId: resolveAgentIdFromSessionKey(context.handle?.requesterSessionKey),
             ...(att.mimeType ? { mimeHint: att.mimeType } : {}),
           }),
           MEDIA_GENERATION_COMPLETION_UPLOAD_TIMEOUT_MS,

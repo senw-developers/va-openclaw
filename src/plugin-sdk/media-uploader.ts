@@ -10,6 +10,12 @@ export type MediaUploadInput = {
   readonly toolCallId?: string;
   readonly source?: string;
   readonly userId?: string;
+  /**
+   * Resolved run agent id, so an org-scoped uploader can derive the tenant from
+   * a shared-instance `agent-org-<orgId>` agent when no per-container org env is
+   * set. Absent for un-agent-scoped callers.
+   */
+  readonly agentId?: string;
 };
 
 export type MediaUploadResult = {
