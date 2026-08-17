@@ -173,7 +173,22 @@
   "tools": {
     "profile": "messaging",
     "alsoAllow": [],
-    "deny": ["sessions_send", "sessions_list", "sessions_history"]
+    "deny": [
+      "sessions_send",
+      "sessions_list",
+      "sessions_history",
+      "sessions_spawn",
+      "cron",
+      "gateway",
+      "nodes",
+      "exec",
+      "spawn",
+      "shell",
+      "apply_patch",
+      "fs_write",
+      "fs_delete",
+      "fs_move"
+    ]
   },
   "commands": {
     "native": "auto",
