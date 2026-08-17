@@ -2,6 +2,7 @@ import * as http from "node:http";
 import * as https from "node:https";
 import { definePluginEntry, type OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
 import { registerNabuGatewayDoctorChecks } from "./src/doctor/org-header-placeholder-check.js";
+import { registerFreeTierPersonaSeed } from "./src/free-tier/persona-seed.js";
 
 /**
  * Mirrors plugins.entries.nabu-gateway.config.
@@ -141,6 +142,10 @@ export default definePluginEntry({
     // Fails `openclaw doctor` if an unresolved ${VAR} sits on an outbound
     // provider header — the R-3 fail-open where a missing org id ships literally.
     registerNabuGatewayDoctorChecks();
+
+    // Seeds the shared Nabu persona into each free-tier agent-org-<id> workspace
+    // so it identifies as Nabu, not a generic assistant. Inert on dedicated boxes.
+    registerFreeTierPersonaSeed();
 
     // Hook: before_agent_reply
     //
